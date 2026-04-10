@@ -17,6 +17,14 @@ const isExpiredCallbackQueryError = (error: unknown) => {
         || normalized.includes('response timeout expired');
 };
 
+const setupCommandDescriptions = async () => {
+    await bot.telegram.setMyCommands([
+        { command: 'start', description: 'Buka menu utama bot' },
+        { command: 'menu', description: 'Buka menu utama bot' },
+        { command: 'ownermenu', description: 'Buka panel owner' }
+    ]);
+};
+
 const startApp = async () => {
     const cyan = '\x1b[36m';
     const bold = '\x1b[1m';
@@ -31,6 +39,12 @@ const startApp = async () => {
     bot.use(session());
     bot.use(systemGuard as any);
     loadModules(bot);
+
+    try {
+        await setupCommandDescriptions();
+    } catch (error) {
+        console.error('Gagal mengatur deskripsi command bot:', error);
+    }
 
     bot.catch((error, ctx) => {
         if (isExpiredCallbackQueryError(error)) {

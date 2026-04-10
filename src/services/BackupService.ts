@@ -13,14 +13,56 @@ export class BackupService {
     private bot: Telegraf<any>;
     private ownerId: number;
     private intervalMs: number;
+    private static schedulerStarted = false;
+    private autoBackupInterval?: NodeJS.Timeout;
+    private autoBackupTimeout?: NodeJS.Timeout;
 
     constructor(bot: Telegraf<any>) {
         this.bot = bot;
         this.ownerId = Number(process.env.OWNER_ID);
-        this.intervalMs = 1 * 60 * 60 * 1000; // Backup tiap 1 jam (bisa disesuaikan)
+        this.intervalMs = 12 * 60 * 60 * 1000; // Backup 2x sehari (setiap 12 jam)
     }
 
     async runBackup(isManual: boolean = false) {
+        let lockAcquired = false;
+        if (!isManual) {
+            const now = new Date();
+            const nextAllowedBackup = new Date(now.getTime() - this.intervalMs);
+            const lockUntil = new Date(now.getTime() + 30 * 60 * 1000);
+
+            const lockResult = await Setting.findOneAndUpdate(
+                {
+                    $and: [
+                        {
+                            $or: [
+                                { backupLockUntil: null },
+                                { backupLockUntil: { $lte: now } }
+                            ]
+                        },
+                        {
+                            $or: [
+                                { lastBackupAt: null },
+                                { lastBackupAt: { $lte: nextAllowedBackup } }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    $set: { backupLockUntil: lockUntil }
+                },
+                {
+                    upsert: true,
+                    new: true
+                }
+            );
+
+            if (!lockResult) {
+                return;
+            }
+
+            lockAcquired = true;
+        }
+
         const waktuMoment = moment().tz("Asia/Jakarta");
         const frames = [
             "🚀 Menyusun file misterius...",
@@ -98,7 +140,7 @@ export class BackupService {
             await this.bot.telegram.sendDocument(this.ownerId, { source: zipPath }, { caption: captionText, parse_mode: "Markdown" });
 
             // 6. Simpan waktu backup ke DB
-            await Setting.updateOne({}, { lastBackupAt: new Date() }, { upsert: true });
+            await Setting.updateOne({}, { lastBackupAt: new Date(), backupLockUntil: null }, { upsert: true });
 
             // 7. Bersihkan file ZIP lokal
             fs.unlinkSync(zipPath);
@@ -108,6 +150,10 @@ export class BackupService {
             }
 
         } catch (error: any) {
+            if (lockAcquired) {
+                await Setting.updateOne({}, { backupLockUntil: null }, { upsert: true });
+            }
+
             if (animInterval && msgAnim) {
                 clearInterval(animInterval);
                 const safeError = error.message.slice(0, 3800);
@@ -118,6 +164,11 @@ export class BackupService {
     }
 
     async startAutoBackup() {
+        if (BackupService.schedulerStarted) {
+            return;
+        }
+        BackupService.schedulerStarted = true;
+
         let settings = await Setting.findOne();
         if (!settings) settings = await Setting.create({});
 
@@ -125,9 +176,11 @@ export class BackupService {
         const now = Date.now();
         let firstDelay = lastBackup ? Math.max(0, this.intervalMs - (now - lastBackup)) : 0;
 
-        setTimeout(() => {
-            this.runBackup(false);
-            setInterval(() => this.runBackup(false), this.intervalMs);
+        this.autoBackupTimeout = setTimeout(() => {
+            void this.runBackup(false);
+            this.autoBackupInterval = setInterval(() => {
+                void this.runBackup(false);
+            }, this.intervalMs);
         }, firstDelay);
 
         const nextTime = moment(now + firstDelay).tz("Asia/Jakarta").format("DD-MM-YYYY HH:mm:ss");

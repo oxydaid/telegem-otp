@@ -252,6 +252,12 @@ export default (bot: Telegraf<MyContext>) => {
     bot.action(/^checksms_(.+)$/, async (ctx) => {
         const orderId = ctx.match[1];
         const dbUser = ctx.dbUser;
+
+        const normalizeStatus = (rawStatus: any): string => String(rawStatus || '').trim().toLowerCase();
+        const isCanceledLike = (rawStatus: any): boolean => {
+            const status = normalizeStatus(rawStatus);
+            return ['canceled', 'cancelled', 'cancel', 'failed', 'expired'].includes(status);
+        };
         
         try {
             await ctx.answerCbQuery('📡 Mengecek SMS dari server...', { show_alert: false });
@@ -269,47 +275,45 @@ export default (bot: Telegraf<MyContext>) => {
 
             // 🔴 CEK: Order sudah canceled (baik dari user maupun API/timeout)
             // Prevent double refund dengan check refundedAt
-            if (transaction?.status === 'canceled' || data.status === 'canceled') {
+            if (isCanceledLike(transaction?.status) || isCanceledLike(data.status)) {
                 if (transaction?.refundedAt) {
                     // Sudah di-refund sebelumnya, jangan refund lagi
                     await ctx.answerCbQuery('⚠️ Pesanan sudah dibatalkan dan di-refund sebelumnya.', { show_alert: true });
                     return;
                 }
 
-                // Refund hanya jika belum pernah di-refund (IDEMPOTENCY CHECK)
-                if (dbUser && transaction?.status !== 'canceled') {
-                    // Claim transaksi canceled secara atomic dulu untuk mencegah double refund.
-                    const claimedTransaction = await Transaction.findOneAndUpdate(
-                        { orderId, status: 'pending', refundedAt: null },
-                        {
-                            status: 'canceled',
-                            refundedAt: new Date(),
-                            refundedBy: 'api'
-                        },
-                        { returnDocument: 'after' }
-                    );
+                // Claim transaksi canceled/pending secara atomic untuk mencegah refund dobel.
+                const claimedTransaction = await Transaction.findOneAndUpdate(
+                    { orderId, status: { $in: ['pending', 'canceled'] }, refundedAt: null },
+                    {
+                        status: 'canceled',
+                        refundedAt: new Date(),
+                        refundedBy: 'api'
+                    },
+                    { returnDocument: 'after' }
+                );
 
-                    if (!claimedTransaction) {
-                        await ctx.answerCbQuery('⚠️ Pesanan sudah diproses sebelumnya.', { show_alert: true });
-                        return;
-                    }
-
-                    const result = await User.findOneAndUpdate(
-                        { _id: dbUser._id },
-                        { $inc: { balance: claimedTransaction.price } },
-                        { returnDocument: 'after' }
-                    );
-
-                    await ctx.editMessageCaption(`✅ *PESANAN DIBATALKAN OTOMATIS*\n\n📋 Order ID: \`${orderId}\`\n⏱️ Alasan: OTP tidak terkirim dalam 20 menit\n\n💸 *Refund:* Rp${claimedTransaction.price.toLocaleString('id-ID')}\n💰 *Saldo Terbaru:* Rp${result?.balance.toLocaleString('id-ID')}`, {
-                        parse_mode: 'Markdown',
-                        reply_markup: { inline_keyboard: [[Markup.button.callback('🏠 Menu Utama', 'back_home')]] }
-                    });
+                if (!claimedTransaction) {
+                    await ctx.answerCbQuery('⚠️ Pesanan sudah diproses sebelumnya.', { show_alert: true });
                     return;
-                } else {
-                    // Sudah di-refund atau transaksi tidak ditemukan
+                }
+
+                const result = await User.findOneAndUpdate(
+                    { _id: claimedTransaction.user },
+                    { $inc: { balance: claimedTransaction.price } },
+                    { returnDocument: 'after' }
+                );
+
+                if (!result) {
                     await ctx.answerCbQuery('⚠️ Pesanan sudah dibatalkan.', { show_alert: true });
                     return;
                 }
+
+                await ctx.editMessageCaption(`✅ *PESANAN DIBATALKAN OTOMATIS*\n\n📋 Order ID: \`${orderId}\`\n⏱️ Alasan: OTP tidak terkirim dalam 20 menit\n\n💸 *Refund:* Rp${claimedTransaction.price.toLocaleString('id-ID')}\n💰 *Saldo Terbaru:* Rp${result.balance.toLocaleString('id-ID')}`, {
+                    parse_mode: 'Markdown',
+                    reply_markup: { inline_keyboard: [[Markup.button.callback('🏠 Menu Utama', 'back_home')]] }
+                });
+                return;
             }
 
             if (otp === "Belum masuk") {
@@ -318,11 +322,11 @@ export default (bot: Telegraf<MyContext>) => {
                     : 0;
                 const isTimedOut = elapsedMs >= 20 * 60 * 1000;
 
-                if (isTimedOut && dbUser) {
+                if (isTimedOut) {
                     await otpService.cancelOrder(orderId).catch(() => {});
 
                     const claimedTransaction = await Transaction.findOneAndUpdate(
-                        { orderId, status: 'pending', refundedAt: null },
+                        { orderId, status: { $in: ['pending', 'canceled'] }, refundedAt: null },
                         {
                             status: 'canceled',
                             refundedAt: new Date(),
@@ -337,13 +341,18 @@ export default (bot: Telegraf<MyContext>) => {
                     }
 
                     const result = await User.findOneAndUpdate(
-                        { _id: dbUser._id },
+                        { _id: claimedTransaction.user },
                         { $inc: { balance: claimedTransaction.price } },
                         { returnDocument: 'after' }
                     );
 
+                    if (!result) {
+                        await ctx.answerCbQuery('⚠️ User tidak ditemukan saat proses refund.', { show_alert: true });
+                        return;
+                    }
+
                     await ctx.editMessageCaption(
-                        `✅ *PESANAN DIBATALKAN OTOMATIS*\n\n📋 Order ID: \`${orderId}\`\n⏱️ Alasan: Tidak ada OTP setelah 20 menit\n\n💸 *Refund:* Rp${claimedTransaction.price.toLocaleString('id-ID')}\n💰 *Saldo Terbaru:* Rp${result?.balance.toLocaleString('id-ID')}`,
+                        `✅ *PESANAN DIBATALKAN OTOMATIS*\n\n📋 Order ID: \`${orderId}\`\n⏱️ Alasan: Tidak ada OTP setelah 20 menit\n\n💸 *Refund:* Rp${claimedTransaction.price.toLocaleString('id-ID')}\n💰 *Saldo Terbaru:* Rp${result.balance.toLocaleString('id-ID')}`,
                         {
                             parse_mode: 'Markdown',
                             reply_markup: { inline_keyboard: [[Markup.button.callback('🏠 Menu Utama', 'back_home')]] }
@@ -457,10 +466,57 @@ export default (bot: Telegraf<MyContext>) => {
         } catch (error: any) {
             await ctx.editMessageCaption(`❌ Gagal membatalkan pesanan: ${error.message}`, {
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali', `checksms_${orderId}`)]] }
+                reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali ke Detail Order', `showorderdetail_${orderId}`)]] }
             });
         }
     });
+
+    // ==========================================
+    // 7. TAMPILKAN DETAIL ORDER (Tanpa auto-cek, hanya tampilkan data)
+    // ==========================================
+    bot.action(/^showorderdetail_(.+)$/, async (ctx) => {
+        const orderId = ctx.match[1];
+
+        try {
+            const transaction = await Transaction.findOne({ orderId }).lean();
+            if (!transaction) {
+                await ctx.answerCbQuery('Pesanan tidak ditemukan.', { show_alert: true });
+                return;
+            }
+
+            // Rebuild caption dari data transaction
+            const caption = `
+✅ *DETAIL PESANAN*
+
+📱 *Layanan:* ${transaction.serviceName}
+🌍 *Negara:* ${transaction.countryName}
+🆔 *Order ID:* \`${transaction.orderId}\`
+📞 *Nomor:* \`${transaction.phoneNumber}\`
+💵 *Harga:* Rp${transaction.price.toLocaleString('id-ID')}
+
+⏱️ *Status:* ${transaction.status === 'success' ? '✅ BERHASIL' : transaction.status === 'canceled' ? '❌ DIBATALKAN' : '⏳ PENDING'}
+🔐 *OTP:* ${transaction.otpCode || 'Belum ada'}
+`;
+
+            await ctx.editMessageCaption(caption, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        transaction.status === 'pending' ? 
+                            [
+                                Markup.button.callback('📩 Cek Status / Kode SMS', `checksms_${orderId}`),
+                                Markup.button.callback('❌ Batalkan', `cancelorder_${orderId}_${transaction.price}`)
+                            ]
+                        : 
+                            [Markup.button.callback('🏠 Menu Utama', 'back_home')]
+                    ]
+                }
+            });
+        } catch (error: any) {
+            await ctx.answerCbQuery(`Gagal memuat detail: ${error.message}`, { show_alert: true });
+        }
+    });
+
     // Menghindari error "Query is too old" ketika menekan tombol tengah (Info Halaman)
     bot.action('noop', async (ctx) => {
         await ctx.answerCbQuery();

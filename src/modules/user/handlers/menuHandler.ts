@@ -182,17 +182,20 @@ const renderUserMenu = async (
 };
 
 export const registerMenuHandlers = (bot: Telegraf<MyContext>) => {
-    // ==========================================
-    // 1. COMMAND /start
-    // ==========================================
-    bot.start(async (ctx) => {
+    const openMainMenu = async (ctx: MyContext) => {
         try {
             await renderUserMenu(ctx, 'home');
         } catch (error: any) {
             console.error('Start Menu Error:', error.message);
             await ctx.reply('❌ Terjadi kesalahan saat membuka menu.');
         }
-    });
+    };
+
+    // ==========================================
+    // 1. COMMAND /start
+    // ==========================================
+    bot.start(openMainMenu);
+    bot.command('menu', openMainMenu);
 
     // ==========================================
     // 2. MENU NAVIGATION

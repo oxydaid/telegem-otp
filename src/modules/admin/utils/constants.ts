@@ -10,7 +10,7 @@ export const ADMIN_CONFIG = {
     BOT_VERSION: process.env.BOT_VERSION || 'V4.0 (MongoDB Edition)',
     BOT_OWNER_NAME: process.env.BOT_OWNER_NAME || '@oxydastore',
     MENU_IMAGE_PATH: process.env.MENU_IMAGE_PATH || './assets/menu-image.jpg',
-    FALLBACK_IMAGE_URL: process.env.FALLBACK_IMAGE_URL || 'https://files.catbox.moe/89uvdg.webp'
+    FALLBACK_IMAGE_URL: process.env.FALLBACK_IMAGE_URL || 'https://files.catbox.moe/4k72p3.webp'
 };
 
 export const PAGINATION_CONFIG = {

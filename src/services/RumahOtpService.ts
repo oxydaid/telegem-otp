@@ -99,7 +99,7 @@ export class RumahOtpService {
         try {
             const response = await this.api.get(`/orders/set_status?order_id=${orderId}&status=cancel`);
             if (response.data?.success) return response.data;
-            throw new Error("Gagal membatalkan pesanan. Mungkin sudah expired atau OTP sudah masuk.");
+            throw new Error(response.data?.message || "Gagal membatalkan pesanan.");
         } catch (error: any) {
             throw new Error(error.message);
         }
@@ -120,7 +120,7 @@ export class RumahOtpService {
         try {
             const response = await this.api.get(`/deposit/get_status?deposit_id=${depositId}`);
             if (response.data?.success) return response.data.data;
-            throw new Error("Gagal mengecek status deposit.");
+            throw new Error(response.data?.message || "Gagal mengecek status deposit.");
         } catch (error: any) {
             throw new Error(error.message);
         }
@@ -132,7 +132,7 @@ export class RumahOtpService {
                 headers: { 'x-apikey': process.env.RUMAHOTP_API_KEY }
             });
             if (response.data?.success) return response.data.data;
-            throw new Error("Gagal membatalkan deposit.");
+            throw new Error(response.data?.message || "Gagal membatalkan deposit.");
         } catch (error: any) {
             throw new Error(error.message);
         }

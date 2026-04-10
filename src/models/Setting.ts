@@ -7,7 +7,8 @@ export interface ISetting extends Document {
     isGroupOnly: boolean;
     isJoinChannelRequired: boolean;
     globalCooldown: number;
-    lastBackupAt: Date | null; // 👈 Tambahkan ini
+    lastBackupAt: Date | null;
+    backupLockUntil: Date | null;
 }
 
 const settingSchema = new Schema<ISetting>({
@@ -16,7 +17,8 @@ const settingSchema = new Schema<ISetting>({
     isGroupOnly: { type: Boolean, default: false },
     isJoinChannelRequired: { type: Boolean, default: false },
     globalCooldown: { type: Number, default: 0 },
-    lastBackupAt: { type: Date, default: null } // 👈 Tambahkan ini
+    lastBackupAt: { type: Date, default: null },
+    backupLockUntil: { type: Date, default: null }
 });
 
 export const Setting = mongoose.model<ISetting>('Setting', settingSchema);
