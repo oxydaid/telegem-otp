@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface ITransaction extends Document {
     user: Types.ObjectId; // Relasi ke ID di tabel User
-    orderId: string;      // ID Order dari RumahOTP
+    orderId: string;      // ID order dari provider OTP
     serviceName: string;
     countryName: string;
     phoneNumber: string;

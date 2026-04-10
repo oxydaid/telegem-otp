@@ -144,6 +144,8 @@ Belum ada user dengan saldo.`;
 
 Halo, <b>${name}</b>! 👋
 
+${USER_CONFIG.BOT_DESCRIPTION}
+
 <b>📱 Layanan Tersedia:</b>
 ✓ Order Nomor Virtual (OTP Real-Time)
 ✓ Deposit Saldo Auto

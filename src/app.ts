@@ -6,7 +6,6 @@ import { loadModules } from './core/loader';
 import { systemGuard } from './middlewares/guard';
 import { BackupService } from './services/BackupService';
 import { DepositChecker } from './services/DepositChecker';
-import { startWebhookServer } from './infrastructure/webhook';
 
 const isExpiredCallbackQueryError = (error: unknown) => {
     if (!(error instanceof Error)) return false;
@@ -28,6 +27,13 @@ const startApp = async () => {
 
     await connectDB();
 
+    await bot.telegram.setMyCommands([
+        { command: 'start', description: 'Tampilkan menu utama bot' },
+        { command: 'ownermenu', description: 'Buka panel owner dan pengaturan bot' }
+    ]).catch((error) => {
+        console.warn('Gagal memperbarui daftar command Telegram:', error);
+    });
+
     bot.use(session());
     bot.use(systemGuard as any);
     loadModules(bot);
@@ -48,34 +54,18 @@ const startApp = async () => {
         });
     });
 
-    const botMode = process.env.BOT_MODE || 'polling';
-    
-    // Backup berjalan di kedua mode
+    // Backup tetap berjalan di mode polling
     const backupService = new BackupService(bot);
     backupService.startAutoBackup(); 
 
-    if (botMode === 'webhook') {
-        const domain = process.env.WEBHOOK_DOMAIN;
-        if (!domain) {
-            console.error("❌ WEBHOOK_DOMAIN belum di-set di .env!");
-            process.exit(1);
-        }
-
-        bot.telegram.setWebhook(`${domain}/telegraf`).then(() => {
-            console.log(`🤖 Bot berjalan dengan mode WEBHOOK`);
-            startWebhookServer(bot);
-            console.log(`\x1b[36m──────────────────────────────\x1b[0m\n`);
-        });
-    } else {
-        bot.launch(() => {
-            console.log(`🤖 Bot berjalan mode: POLLING (@${bot.botInfo?.username})`);
-            
-            const depositChecker = new DepositChecker(bot);
-            depositChecker.start();
-            
-            console.log(`\x1b[36m──────────────────────────────\x1b[0m\n`);
-        });
-    }
+    bot.launch(() => {
+        console.log(`🤖 Bot berjalan mode: POLLING (@${bot.botInfo?.username})`);
+        
+        const depositChecker = new DepositChecker(bot);
+        depositChecker.start();
+        
+        console.log(`\x1b[36m──────────────────────────────\x1b[0m\n`);
+    });
 
     process.once('SIGINT', () => bot.stop('SIGINT'));
     process.once('SIGTERM', () => bot.stop('SIGTERM'));

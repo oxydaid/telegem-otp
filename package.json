@@ -2,10 +2,12 @@
   "name": "telegem-otp-bot",
   "version": "1.0.0",
   "description": "Bot telegram untuk order nomor virtual",
-  "main": "index.js",
+  "main": "dist/app.js",
   "scripts": {
     "dev": "nodemon src/app.ts",
-    "build": "tsc",
+    "build": "tsup src/app.ts src/modules/*/index.ts --format cjs --target node20 --minify --sourcemap --clean --out-dir dist",
+    "build:prod": "tsup src/app.ts src/modules/*/index.ts --format cjs --target node20 --minify --clean --out-dir dist",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/app.js"
   },
   "keywords": [],
@@ -30,6 +32,7 @@
     "@types/node": "^25.5.2",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
     "typescript": "^6.0.2"
   }
 }

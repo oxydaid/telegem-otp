@@ -13,14 +13,24 @@ export class BackupService {
     private bot: Telegraf<any>;
     private ownerId: number;
     private intervalMs: number;
+    private autoBackupTimeout: NodeJS.Timeout | null = null;
+    private isBackupRunning = false;
 
     constructor(bot: Telegraf<any>) {
         this.bot = bot;
         this.ownerId = Number(process.env.OWNER_ID);
-        this.intervalMs = 1 * 60 * 60 * 1000; // Backup tiap 1 jam (bisa disesuaikan)
+        this.intervalMs = 12 * 60 * 60 * 1000; // Backup tiap 12 jam
     }
 
     async runBackup(isManual: boolean = false) {
+        if (this.isBackupRunning) {
+            if (isManual) {
+                await this.bot.telegram.sendMessage(this.ownerId, '⏳ Backup masih berjalan. Coba lagi setelah proses saat ini selesai.').catch(() => {});
+            }
+            return;
+        }
+
+        this.isBackupRunning = true;
         const waktuMoment = moment().tz("Asia/Jakarta");
         const frames = [
             "🚀 Menyusun file misterius...",
@@ -114,7 +124,24 @@ export class BackupService {
                 await this.bot.telegram.editMessageText(this.ownerId, msgAnim.message_id, undefined, `⚠️ Backup gagal!\n\nDetail:\n${safeError}`);
             }
             console.error('Backup Error:', error);
+        } finally {
+            this.isBackupRunning = false;
+
+            if (animInterval) {
+                clearInterval(animInterval);
+            }
         }
+    }
+
+    private scheduleNextAutoBackup(delayMs: number) {
+        if (this.autoBackupTimeout) {
+            clearTimeout(this.autoBackupTimeout);
+        }
+
+        this.autoBackupTimeout = setTimeout(async () => {
+            await this.runBackup(false);
+            this.scheduleNextAutoBackup(this.intervalMs);
+        }, delayMs);
     }
 
     async startAutoBackup() {
@@ -123,14 +150,11 @@ export class BackupService {
 
         const lastBackup = settings.lastBackupAt ? settings.lastBackupAt.getTime() : null;
         const now = Date.now();
-        let firstDelay = lastBackup ? Math.max(0, this.intervalMs - (now - lastBackup)) : 0;
+        const firstDelay = lastBackup ? Math.max(0, this.intervalMs - (now - lastBackup)) : 0;
 
-        setTimeout(() => {
-            this.runBackup(false);
-            setInterval(() => this.runBackup(false), this.intervalMs);
-        }, firstDelay);
+        this.scheduleNextAutoBackup(firstDelay);
 
         const nextTime = moment(now + firstDelay).tz("Asia/Jakarta").format("DD-MM-YYYY HH:mm:ss");
-        await this.bot.telegram.sendMessage(this.ownerId, `🔄 Bot menyala!\n⏳ Auto-backup MongoDB selanjutnya dijadwalkan pada: *${nextTime}*`, { parse_mode: 'Markdown' }).catch(() => {});
+        await this.bot.telegram.sendMessage(this.ownerId, `🔄 Bot menyala!\n⏳ Auto-backup berjalan setiap 12 jam.\n🗓️ Eksekusi berikutnya: *${nextTime}*`, { parse_mode: 'Markdown' }).catch(() => {});
     }
 }

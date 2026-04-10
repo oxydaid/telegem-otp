@@ -5,8 +5,8 @@
 
 export const ADMIN_CONFIG = {
     OWNER_ID: Number(process.env.OWNER_ID),
-    BOT_NAME: process.env.BOT_NAME || 'Auto Order Nokos - Botz',
-    BOT_DESCRIPTION: process.env.BOT_DESCRIPTION || 'Layanan automatis order nomor virtual 24/7',
+    BOT_NAME: process.env.BOT_NAME || 'Telegem OTP Bot',
+    BOT_DESCRIPTION: process.env.BOT_DESCRIPTION || 'Layanan otomatis order nomor virtual, deposit saldo, dan riwayat transaksi 24/7',
     BOT_VERSION: process.env.BOT_VERSION || 'V4.0 (MongoDB Edition)',
     BOT_OWNER_NAME: process.env.BOT_OWNER_NAME || '@oxydastore',
     MENU_IMAGE_PATH: process.env.MENU_IMAGE_PATH || './assets/menu-image.jpg',

@@ -1,22 +1,27 @@
 import { Telegraf } from 'telegraf';
 import { Deposit } from '../models/Deposit';
 import { User, IUser } from '../models/User';
-import { RumahOtpService } from './RumahOtpService';
+import { JasaOtpService } from './JasaOtpService';
 import { ChannelService } from './ChannelService';
 
 export class DepositChecker {
     private bot: Telegraf<any>;
-    private otpService: RumahOtpService;
+    private otpService: JasaOtpService;
     private channelService: ChannelService;
     private isRunning: boolean = false;
 
     constructor(bot: Telegraf<any>) {
         this.bot = bot;
-        this.otpService = new RumahOtpService();
+        this.otpService = new JasaOtpService();
         this.channelService = new ChannelService(bot);
     }
 
     start() {
+        if (!this.otpService.isDepositSupported()) {
+            console.log('ℹ️ Deposit checker dinonaktifkan: provider Jasa OTP tidak mendukung endpoint deposit.');
+            return;
+        }
+
         // Berjalan secara global setiap 10 detik
         setInterval(() => this.checkPendingDeposits(), 10000);
         console.log('✅ Global Deposit Checker Service berjalan...');

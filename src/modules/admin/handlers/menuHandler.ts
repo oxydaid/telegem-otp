@@ -158,6 +158,8 @@ Tip: Setelah buka panel ini, tetap gunakan command manual agar input lebih cepat
     return `<blockquote><b>🍁 ${ADMIN_CONFIG.BOT_NAME} 🛒</b></blockquote>
 Halo, @${username} 👋
 
+${ADMIN_CONFIG.BOT_DESCRIPTION}
+
 <b>Bot Information</b>
 ☇ Nama: ${ADMIN_CONFIG.BOT_NAME}
 ☇ Deskripsi: ${ADMIN_CONFIG.BOT_DESCRIPTION}

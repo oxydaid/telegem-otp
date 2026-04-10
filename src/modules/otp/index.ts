@@ -1,190 +1,158 @@
 // src/modules/otp/index.ts
 import { Telegraf, Markup } from 'telegraf';
 import { MyContext } from '../../middlewares/guard';
-import { RumahOtpService } from '../../services/RumahOtpService';
+import { JasaOtpService } from '../../services/JasaOtpService';
 import { Transaction } from '../../models/Transaction';
 import { User } from '../../models/User';
 import { ChannelService } from '../../services/ChannelService';
 
-// Fungsi bantuan untuk membuat tombol navigasi halaman
-const makePaginationButtons = (prefix: string, currentPage: number, totalPages: number, extraArgs: string = '') => {
+const PER_PAGE = 8;
+
+const makePaginationButtons = (prefix: string, currentPage: number, totalPages: number, extraArgs = '') => {
     const buttons = [];
-    if (currentPage > 1) {
-        buttons.push(Markup.button.callback('⬅️ Prev', `${prefix}_${currentPage - 1}${extraArgs}`));
-    }
+    if (currentPage > 1) buttons.push(Markup.button.callback('⬅️ Prev', `${prefix}_${currentPage - 1}${extraArgs}`));
     buttons.push(Markup.button.callback(`📖 Hal ${currentPage}/${totalPages}`, 'noop'));
-    if (currentPage < totalPages) {
-        buttons.push(Markup.button.callback('Next ➡️', `${prefix}_${currentPage + 1}${extraArgs}`));
-    }
+    if (currentPage < totalPages) buttons.push(Markup.button.callback('Next ➡️', `${prefix}_${currentPage + 1}${extraArgs}`));
     return buttons;
 };
 
+const encodeValue = (value: string) => encodeURIComponent(value);
+const decodeValue = (value: string) => decodeURIComponent(value);
+
 export default (bot: Telegraf<MyContext>) => {
-    const otpService = new RumahOtpService();
+    const otpService = new JasaOtpService();
     const channelService = new ChannelService(bot);
-    const PER_PAGE = 10; // Jumlah item per halaman
 
-    // ==========================================
-    // 1. MENU LAYANAN (SERVICES)
-    // Format Callback: srv_p_<page>
-    // ==========================================
-    bot.action(['choose_service', /^srv_p_(\d+)$/], async (ctx) => {
+    bot.action(['choose_service', /^ctry_p_(\d+)$/], async (ctx) => {
         try {
-            // Deteksi apakah ini klik awal atau pindah halaman
-            const isPaging = ctx.match && ctx.match[0].startsWith('srv_p_');
-            const page = isPaging ? parseInt(ctx.match[1]) : 1;
+            const isPaging = !!(ctx.match && ctx.match[0].startsWith('ctry_p_'));
+            const page = isPaging ? Number(ctx.match[1]) : 1;
 
-            if (!isPaging) await ctx.editMessageCaption('⏳ *Memuat daftar aplikasi OTP...*', { parse_mode: 'Markdown' });
+            if (!isPaging) {
+                await ctx.editMessageCaption('⏳ *Memuat daftar negara...*', { parse_mode: 'Markdown' });
+            }
 
-            const services = await otpService.getServices();
-            const totalPages = Math.ceil(services.length / PER_PAGE);
-            const start = (page - 1) * PER_PAGE;
-            const listToShow = services.slice(start, start + PER_PAGE);
+            const countries = await otpService.getCountries();
+            const totalPages = Math.max(1, Math.ceil(countries.length / PER_PAGE));
+            const safePage = Math.min(Math.max(page, 1), totalPages);
+            const start = (safePage - 1) * PER_PAGE;
+            const rows = countries.slice(start, start + PER_PAGE);
 
-            // Buat tombol list layanan
-            const keyboard = listToShow.map((srv) => [
-                // Saat layanan diklik, arahkan ke halaman 1 negara (cty_p_1_<serviceId>)
-                Markup.button.callback(`${srv.service_name} | ID ${srv.service_code}`, `cty_p_1_${srv.service_code}`)
+            const keyboard = rows.map((country) => [
+                Markup.button.callback(country.nama_negara.toUpperCase(), `opr_p_1_${country.id_negara}`)
             ]);
 
-            // Tambahkan navigasi dan tombol kembali
-            keyboard.push(makePaginationButtons('srv_p', page, totalPages));
+            keyboard.push(makePaginationButtons('ctry_p', safePage, totalPages));
             keyboard.push([Markup.button.callback('🏠 Kembali Ke Menu Utama', 'back_home')]);
 
-            const caption = `📲 *Daftar Aplikasi OTP*\n\nSilakan pilih salah satu aplikasi.\n💡 Total layanan: *${services.length}*`;
-
-            await ctx.editMessageCaption(caption, {
+            await ctx.editMessageCaption(`🌍 *Pilih Negara*\n\nTotal negara tersedia: *${countries.length}*`, {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: keyboard }
             });
-        } catch (error) {
-            await ctx.editMessageCaption('❌ *Gagal memuat daftar layanan.*');
+        } catch (error: any) {
+            await ctx.editMessageCaption(`❌ *Gagal memuat negara:* ${error.message}`, { parse_mode: 'Markdown' });
         }
     });
 
-    // ==========================================
-    // 2. MENU NEGARA (COUNTRIES)
-    // Format Callback: cty_p_<page>_<serviceId>
-    // ==========================================
-    bot.action(/^cty_p_(\d+)_(\d+)$/, async (ctx) => {
+    bot.action(/^opr_p_(\d+)_(\d+)$/, async (ctx) => {
         try {
-            const page = parseInt(ctx.match[1]);
-            const serviceId = ctx.match[2];
+            const page = Number(ctx.match[1]);
+            const countryId = Number(ctx.match[2]);
 
-            const countries = await otpService.getCountries(serviceId);
-            
-            if (countries.length === 0) {
-                return ctx.editMessageCaption('⚠️ *Maaf, stok untuk layanan ini sedang kosong di semua negara.*', {
+            const operators = await otpService.getOperators(countryId);
+            if (operators.length === 0) {
+                return ctx.editMessageCaption('⚠️ *Operator tidak tersedia untuk negara ini.*', {
                     parse_mode: 'Markdown',
                     reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali', 'choose_service')]] }
                 });
             }
 
-            const totalPages = Math.ceil(countries.length / PER_PAGE);
-            const start = (page - 1) * PER_PAGE;
-            const listToShow = countries.slice(start, start + PER_PAGE);
+            const totalPages = Math.max(1, Math.ceil(operators.length / PER_PAGE));
+            const safePage = Math.min(Math.max(page, 1), totalPages);
+            const start = (safePage - 1) * PER_PAGE;
+            const rows = operators.slice(start, start + PER_PAGE);
 
-            const keyboard = listToShow.map((c: any) => [
-                // Saat negara diklik, arahkan ke halaman 1 harga (prc_p_1_<serviceId>_<iso>_<numId>)
-                Markup.button.callback(
-                    `${c.name} (${c.prefix}) | Stok: ${c.stock_total}`, 
-                    `prc_p_1_${serviceId}_${c.iso_code}_${c.number_id}`
-                )
+            const keyboard = rows.map((row) => [
+                Markup.button.callback(row.operator.toUpperCase(), `svc_p_1_${countryId}_${encodeValue(row.operator)}`)
             ]);
 
-            keyboard.push(makePaginationButtons('cty_p', page, totalPages, `_${serviceId}`));
-            keyboard.push([Markup.button.callback('⬅️ Kembali ke Layanan', 'choose_service')]);
+            keyboard.push(makePaginationButtons('opr_p', safePage, totalPages, `_${countryId}`));
+            keyboard.push([Markup.button.callback('⬅️ Kembali ke Negara', 'choose_service')]);
 
-            const caption = `🌍 *Pilih Negara*\nLayanan ID: *${serviceId}*\n🌏 Total Negara: *${countries.length}*\n\nSilakan pilih negara:`;
-
-            await ctx.editMessageCaption(caption, {
+            await ctx.editMessageCaption('📶 *Pilih Operator*\n\nSilakan pilih operator yang ingin dipakai.', {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: keyboard }
             });
-        } catch (error) {
-            await ctx.editMessageCaption('❌ *Gagal memuat daftar negara.*');
+        } catch (error: any) {
+            await ctx.editMessageCaption(`❌ *Gagal memuat operator:* ${error.message}`, { parse_mode: 'Markdown' });
         }
     });
 
-    // ==========================================
-    // 3. MENU HARGA / PROVIDER (PRICES)
-    // Format Callback: prc_p_<page>_<serviceId>_<isoCode>_<numberId>
-    // ==========================================
-    bot.action(/^prc_p_(\d+)_(\d+)_([a-zA-Z0-9]+)_(\d+)$/, async (ctx) => {
+    bot.action(/^svc_p_(\d+)_(\d+)_([^_]+)$/, async (ctx) => {
         try {
-            const page = parseInt(ctx.match[1]);
-            const serviceId = ctx.match[2];
-            const isoCode = ctx.match[3];
-            const numberId = ctx.match[4];
+            const page = Number(ctx.match[1]);
+            const countryId = Number(ctx.match[2]);
+            const operator = decodeValue(ctx.match[3]);
 
-            const countries = await otpService.getCountries(serviceId);
-            const country = countries.find((c: any) => String(c.number_id) === String(numberId));
-
-            if (!country || !country.pricelist || country.pricelist.length === 0) {
-                return ctx.editMessageCaption('⚠️ *Data harga tidak ditemukan atau stok kosong.*', {
+            const services = await otpService.getServices(countryId);
+            if (services.length === 0) {
+                return ctx.editMessageCaption('⚠️ *Stok layanan di negara ini sedang kosong.*', {
                     parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali', `cty_p_1_${serviceId}`)]] }
+                    reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali', `opr_p_1_${countryId}`)]] }
                 });
             }
 
             const untungNokos = Number(process.env.UNTUNG_NOKOS) || 1000;
-            
-            // Ambil provider yang tersedia dan punya stok
-            const availableProviders = country.pricelist.filter((p: any) => p.available && p.stock > 0);
-            
-            const totalPages = Math.ceil(availableProviders.length / PER_PAGE);
-            const start = (page - 1) * PER_PAGE;
-            const listToShow = availableProviders.slice(start, start + PER_PAGE);
+            const totalPages = Math.max(1, Math.ceil(services.length / PER_PAGE));
+            const safePage = Math.min(Math.max(page, 1), totalPages);
+            const start = (safePage - 1) * PER_PAGE;
+            const rows = services.slice(start, start + PER_PAGE);
 
-            const keyboard = listToShow.map((p: any) => {
-                const hargaFinal = Number(p.price) + untungNokos;
+            const keyboard = rows.map((row) => {
+                const finalPrice = row.harga + untungNokos;
                 return [
                     Markup.button.callback(
-                        `Rp${hargaFinal.toLocaleString('id-ID')} 💰 (Stok: ${p.stock})`,
-                        `buy_${numberId}_${p.provider_id}_${serviceId}` // Tombol eksekusi pembelian!
+                        `${row.layanan_name} | Rp${finalPrice.toLocaleString('id-ID')} | Stok ${row.stok}`,
+                        `buy_${countryId}_${row.layanan_code}_${encodeValue(operator)}`
                     )
                 ];
             });
 
-            // Navigasi halaman harga
-            keyboard.push(makePaginationButtons('prc_p', page, totalPages, `_${serviceId}_${isoCode}_${numberId}`));
-            // Tombol kembali ke negara
-            keyboard.push([Markup.button.callback('⬅️ Kembali ke Negara', `cty_p_1_${serviceId}`)]);
+            keyboard.push(makePaginationButtons('svc_p', safePage, totalPages, `_${countryId}_${encodeValue(operator)}`));
+            keyboard.push([Markup.button.callback('⬅️ Kembali ke Operator', `opr_p_1_${countryId}`)]);
 
-            const caption = `🌍 Negara: *${country.name} (${country.prefix})*\n📦 Layanan ID: *${serviceId}*\n📊 Total Pilihan Harga: *${availableProviders.length}*\n\n💵 *Pilih Harga:*`;
-
-            await ctx.editMessageCaption(caption, {
+            await ctx.editMessageCaption(`📲 *Pilih Layanan OTP*\n\nOperator: *${operator}*\nTotal layanan: *${services.length}*`, {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: keyboard }
             });
-
-        } catch (error) {
-            console.log(error);
-            await ctx.editMessageCaption('❌ *Gagal memuat harga.*');
+        } catch (error: any) {
+            await ctx.editMessageCaption(`❌ *Gagal memuat layanan:* ${error.message}`, { parse_mode: 'Markdown' });
         }
     });
 
-    bot.action(/^buy_(\d+)_(\d+)_(\d+)$/, async (ctx) => {
+    bot.action(/^buy_(\d+)_([a-zA-Z0-9]+)_([^_]+)$/, async (ctx) => {
         const dbUser = ctx.dbUser;
         if (!dbUser) return;
 
-        const numberId = ctx.match[1];
-        const providerId = ctx.match[2];
-        const serviceId = ctx.match[3];
+        const countryId = Number(ctx.match[1]);
+        const serviceCode = ctx.match[2];
+        const operator = decodeValue(ctx.match[3]);
 
         try {
             await ctx.editMessageCaption('⏳ *Memproses pesanan Anda...*', { parse_mode: 'Markdown' });
 
-            const countries = await otpService.getCountries(serviceId);
-            const country = countries.find((c: any) => String(c.number_id) === String(numberId));
-            const providerData = country?.pricelist?.find((p: any) => String(p.provider_id) === String(providerId));
+            const [services, countries] = await Promise.all([
+                otpService.getServices(countryId),
+                otpService.getCountries()
+            ]);
 
-            if (!providerData) throw new Error("Data harga kedaluwarsa.");
+            const service = services.find((item) => item.layanan_code === serviceCode);
+            if (!service) throw new Error('Layanan tidak tersedia atau stok habis.');
 
+            const country = countries.find((item) => item.id_negara === countryId);
             const untungNokos = Number(process.env.UNTUNG_NOKOS) || 1000;
-            const hargaFinal = Number(providerData.price) + untungNokos;
+            const hargaFinal = service.harga + untungNokos;
 
-            // Atomic update (Mencegah eksploitasi race condition via SPAM click)
             const updatedUser = await User.findOneAndUpdate(
                 { _id: dbUser._id, balance: { $gte: hargaFinal } },
                 { $inc: { balance: -hargaFinal } },
@@ -192,52 +160,41 @@ export default (bot: Telegraf<MyContext>) => {
             );
 
             if (!updatedUser) {
-                return ctx.editMessageCaption(`❌ *SALDO TIDAK CUKUP atau Transaksi Sedang Diproses!*\n\nSisa saldo Anda: *Rp${dbUser.balance.toLocaleString('id-ID')}*\nHarga layanan: *Rp${hargaFinal.toLocaleString('id-ID')}*`, {
-                    parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[Markup.button.callback('💰 Top Up Saldo', 'topup_nokos')]] }
-                });
+                return ctx.editMessageCaption(
+                    `❌ *SALDO TIDAK CUKUP*\n\nSaldo Anda: *Rp${dbUser.balance.toLocaleString('id-ID')}*\nHarga layanan: *Rp${hargaFinal.toLocaleString('id-ID')}*`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [[Markup.button.callback('💰 Top Up Saldo', 'topup_nokos')]] }
+                    }
+                );
             }
 
             try {
-                // Order ke RumahOTP
-                const orderData = await otpService.orderNumber(numberId, providerId);
+                const orderData = await otpService.orderNumber(countryId, serviceCode, operator);
 
-                // ✅ CATAT KE DATABASE TRANSAKSI
                 await Transaction.create({
                     user: dbUser._id,
                     orderId: orderData.order_id,
-                    serviceName: orderData.service,
-                    countryName: orderData.country,
+                    serviceName: service.layanan_name,
+                    countryName: country?.nama_negara || `Negara ${countryId}`,
                     phoneNumber: orderData.phone_number,
                     price: hargaFinal,
                     status: 'pending'
                 });
 
-                const caption = `
-✅ *PESANAN BERHASIL DIBUAT*
-
-📱 *Layanan:* ${orderData.service}
-🌍 *Negara:* ${orderData.country}
-🆔 *Order ID:* \`${orderData.order_id}\`
-📞 *Nomor:* \`${orderData.phone_number}\`
-💵 *Harga:* Rp${hargaFinal.toLocaleString('id-ID')}
-
-⏱️ *Status:* Menunggu OTP
-⏳ *Kadaluarsa:* ${orderData.expires_in_minute} menit
-💰 *Sisa Saldo:* Rp${dbUser.balance.toLocaleString('id-ID')}
-`;
-                await ctx.editMessageCaption(caption, {
-                    parse_mode: 'Markdown',
-                    reply_markup: {
-                        inline_keyboard: [
-                            [Markup.button.callback('📩 Cek Status / Kode SMS', `checksms_${orderData.order_id}`)],
-                            [Markup.button.callback('❌ Batalkan Pesanan', `cancelorder_${orderData.order_id}_${hargaFinal}`)]
-                        ]
+                await ctx.editMessageCaption(
+                    `✅ *PESANAN BERHASIL DIBUAT*\n\n📱 *Layanan:* ${service.layanan_name}\n🌍 *Negara:* ${country?.nama_negara || countryId}\n📶 *Operator:* ${operator}\n🆔 *Order ID:* \`${orderData.order_id}\`\n📞 *Nomor:* \`${orderData.phone_number}\`\n💵 *Harga:* Rp${hargaFinal.toLocaleString('id-ID')}\n\n⏱️ *Status:* Menunggu OTP\n💰 *Sisa Saldo:* Rp${updatedUser.balance.toLocaleString('id-ID')}`,
+                    {
+                        parse_mode: 'Markdown',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [Markup.button.callback('📩 Cek Status / Kode SMS', `checksms_${orderData.order_id}`)],
+                                [Markup.button.callback('❌ Batalkan Pesanan', `cancelorder_${orderData.order_id}_${hargaFinal}`)]
+                            ]
+                        }
                     }
-                });
-
+                );
             } catch (apiError: any) {
-                // Rollback Saldo Atomic
                 await User.updateOne({ _id: dbUser._id }, { $inc: { balance: hargaFinal } });
                 await ctx.editMessageCaption(`❌ *Gagal Memesan Nomor*\nAlasan: ${apiError.message}\n\n💰 *Saldo dikembalikan.*`, { parse_mode: 'Markdown' });
             }
@@ -257,7 +214,7 @@ export default (bot: Telegraf<MyContext>) => {
             await ctx.answerCbQuery('📡 Mengecek SMS dari server...', { show_alert: false });
             
             const data = await otpService.checkStatus(orderId);
-            const otp = (data.otp_code && data.otp_code !== "-") ? data.otp_code : "Belum masuk";
+            const otp = data.otp_code && data.otp_code !== '-' ? data.otp_code : 'Belum masuk';
 
             const transaction = await Transaction.findOne({ orderId }).lean();
             
@@ -312,7 +269,7 @@ export default (bot: Telegraf<MyContext>) => {
                 }
             }
 
-            if (otp === "Belum masuk") {
+            if (otp === 'Belum masuk') {
                 const elapsedMs = transaction?.createdAt
                     ? Date.now() - new Date(transaction.createdAt).getTime()
                     : 0;
@@ -370,11 +327,11 @@ export default (bot: Telegraf<MyContext>) => {
                         fullName: dbUser.fullName,
                         username: dbUser.username
                     },
-                    serviceName: data.service,
-                    countryName: data.country,
-                    operatorName: data.operator || data.operator_name || 'any',
-                    orderId: data.order_id || orderId,
-                    phoneNumber: data.phone_number,
+                    serviceName: transaction?.serviceName || 'OTP',
+                    countryName: transaction?.countryName || '-',
+                    operatorName: 'any',
+                    orderId,
+                    phoneNumber: transaction?.phoneNumber || '-',
                     otpCode: otp,
                     price: updatedTransaction.price,
                     createdAt: updatedTransaction.createdAt || new Date()
@@ -386,8 +343,8 @@ export default (bot: Telegraf<MyContext>) => {
             const successCaption = `
 🎉 *OTP BERHASIL DITERIMA!* 🎉
 
-📱 *Layanan:* ${data.service}
-📞 *Nomor:* \`${data.phone_number}\`
+📱 *Layanan:* ${transaction?.serviceName || 'OTP'}
+📞 *Nomor:* \`${transaction?.phoneNumber || '-'}\`
 🔐 *Kode OTP:* \`${otp}\`
 
 ✅ Transaksi Selesai dan dicatat di Riwayat.`;
@@ -457,10 +414,57 @@ export default (bot: Telegraf<MyContext>) => {
         } catch (error: any) {
             await ctx.editMessageCaption(`❌ Gagal membatalkan pesanan: ${error.message}`, {
                 parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali', `checksms_${orderId}`)]] }
+                reply_markup: { inline_keyboard: [[Markup.button.callback('⬅️ Kembali ke Detail Order', `showorderdetail_${orderId}`)]] }
             });
         }
     });
+
+    // ==========================================
+    // 7. TAMPILKAN DETAIL ORDER (Tanpa auto-cek, hanya tampilkan data)
+    // ==========================================
+    bot.action(/^showorderdetail_(.+)$/, async (ctx) => {
+        const orderId = ctx.match[1];
+
+        try {
+            const transaction = await Transaction.findOne({ orderId }).lean();
+            if (!transaction) {
+                await ctx.answerCbQuery('Pesanan tidak ditemukan.', { show_alert: true });
+                return;
+            }
+
+            // Rebuild caption dari data transaction
+            const caption = `
+✅ *DETAIL PESANAN*
+
+📱 *Layanan:* ${transaction.serviceName}
+🌍 *Negara:* ${transaction.countryName}
+🆔 *Order ID:* \`${transaction.orderId}\`
+📞 *Nomor:* \`${transaction.phoneNumber}\`
+💵 *Harga:* Rp${transaction.price.toLocaleString('id-ID')}
+
+⏱️ *Status:* ${transaction.status === 'success' ? '✅ BERHASIL' : transaction.status === 'canceled' ? '❌ DIBATALKAN' : '⏳ PENDING'}
+🔐 *OTP:* ${transaction.otpCode || 'Belum ada'}
+`;
+
+            await ctx.editMessageCaption(caption, {
+                parse_mode: 'Markdown',
+                reply_markup: {
+                    inline_keyboard: [
+                        transaction.status === 'pending' ? 
+                            [
+                                Markup.button.callback('📩 Cek Status / Kode SMS', `checksms_${orderId}`),
+                                Markup.button.callback('❌ Batalkan', `cancelorder_${orderId}_${transaction.price}`)
+                            ]
+                        : 
+                            [Markup.button.callback('🏠 Menu Utama', 'back_home')]
+                    ]
+                }
+            });
+        } catch (error: any) {
+            await ctx.answerCbQuery(`Gagal memuat detail: ${error.message}`, { show_alert: true });
+        }
+    });
+
     // Menghindari error "Query is too old" ketika menekan tombol tengah (Info Halaman)
     bot.action('noop', async (ctx) => {
         await ctx.answerCbQuery();

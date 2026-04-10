@@ -3,11 +3,11 @@ import { Telegraf, Markup } from 'telegraf';
 import { MyContext } from '../../middlewares/guard';
 import { Deposit } from '../../models/Deposit';
 import { User } from '../../models/User';
-import { RumahOtpService } from '../../services/RumahOtpService';
+import { JasaOtpService } from '../../services/JasaOtpService';
 import { ChannelService } from '../../services/ChannelService';
 
 export default (bot: Telegraf<MyContext>) => {
-    const otpService = new RumahOtpService();
+    const otpService = new JasaOtpService();
     const channelService = new ChannelService(bot);
 
     const showTopupWizard = async (ctx: any) => {
@@ -51,6 +51,12 @@ export default (bot: Telegraf<MyContext>) => {
     // 1. Tangkap klik tombol "Top Up Saldo"
     bot.action(['topup_nokos', 'user_topup'], async (ctx) => {
         await ctx.answerCbQuery().catch(() => {});
+
+        if (!otpService.isDepositSupported()) {
+            await ctx.answerCbQuery('Top up otomatis sedang nonaktif di provider saat ini.', { show_alert: true }).catch(() => {});
+            return;
+        }
+
         await showTopupWizard(ctx);
     });
 
@@ -144,7 +150,7 @@ export default (bot: Telegraf<MyContext>) => {
             const untungDeposit = Number(process.env.UNTUNG_DEPOSIT) || 500;
             const totalRequest = amount + untungDeposit; // Total + Fee
 
-            // Tembak API RumahOTP
+            // Request deposit ke provider aktif
             const data = await otpService.createDeposit(totalRequest);
             const feeAkhir = data.total - amount;
 

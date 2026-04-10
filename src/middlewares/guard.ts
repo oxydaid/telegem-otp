@@ -8,10 +8,6 @@ export interface SessionData {
     awaitingDeposit?: boolean;
     awaitingAdminUserSearch?: boolean;
     adminUserSearchKeyword?: string;
-    h2hSearch?: {
-        keyword: string;
-        results: any[];
-    };
 }
 
 // 2. Tambahkan session ke MyContext
