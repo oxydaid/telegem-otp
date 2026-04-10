@@ -4,10 +4,14 @@ import path from 'path';
 import { Telegraf } from 'telegraf';
 
 export const loadModules = (bot: Telegraf) => {
-    const modulesPath = path.join(__dirname, '../modules');
+    const modulesCandidates = [
+        path.join(__dirname, '../modules'),
+        path.join(__dirname, 'modules')
+    ];
+    const modulesPath = modulesCandidates.find((candidate) => fs.existsSync(candidate));
 
     // Pastikan folder modules ada
-    if (!fs.existsSync(modulesPath)) {
+    if (!modulesPath) {
         console.warn('⚠️ Folder modules tidak ditemukan!');
         return;
     }
@@ -20,9 +24,11 @@ export const loadModules = (bot: Telegraf) => {
     let loadedCount = 0;
 
     moduleFolders.forEach((folder) => {
-        const indexPath = path.join(modulesPath, folder, 'index.ts');
+        const indexJsPath = path.join(modulesPath, folder, 'index.js');
+        const indexTsPath = path.join(modulesPath, folder, 'index.ts');
+        const indexPath = fs.existsSync(indexJsPath) ? indexJsPath : indexTsPath;
         
-        // Jika file index.ts ada di dalam folder tersebut, muat fiturnya
+        // Muat file modul yang tersedia untuk mode dist (js) atau dev (ts).
         if (fs.existsSync(indexPath)) {
             const moduleSetup = require(indexPath).default;
             if (typeof moduleSetup === 'function') {

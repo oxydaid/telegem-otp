@@ -72,7 +72,7 @@ const renderChannelList = async (ctx: MyContext, page = 1, isEdit = true) => {
     const currentPage = Math.min(Math.max(1, page), totalPages);
 
     const [items, activeChannel, activeGroup] = await Promise.all([
-        CommunityLink.find({})
+        CommunityLink.find({}).lean()
             .sort({ order: 1, createdAt: 1 })
             .skip((currentPage - 1) * PER_PAGE)
             .limit(PER_PAGE),
@@ -128,7 +128,7 @@ const sendAddPrompt = async (ctx: MyContext, type: CommunityType) => {
         `Kirim format:\n` +
         `<code>Nama | Link Telegram | Deskripsi (opsional)</code>\n\n` +
         `Contoh:\n` +
-        `<code>Channel Testi | https://t.me/testi_okeotp | Bukti transaksi user</code>\n\n` +
+        `<code>Channel Testi | ${process.env.TESTI_CHANNEL_URL || 'https://t.me/testi_bot'} | Bukti transaksi user</code>\n\n` +
         `Link boleh dikosongkan pakai '-' jika belum ada.\n` +
         `Kirim /batal_channel untuk membatalkan.`,
         { parse_mode: 'HTML' }

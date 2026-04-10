@@ -31,7 +31,8 @@ export class DepositChecker {
             // Ambil semua deposit berstatus pending beserta data User-nya
             const pendings = await Deposit.find({ status: 'pending' }).populate<{ user: IUser }>('user');
 
-            for (const deposit of pendings) {
+            // Proses secara asinkron agar lebih cepat
+            await Promise.all(pendings.map(async (deposit) => {
                 const now = new Date();
                 const diffTime = now.getTime() - deposit.createdAt.getTime();
                 
@@ -39,7 +40,7 @@ export class DepositChecker {
                 if (diffTime > 5 * 60 * 1000) {
                     // Jika sudah di-cancel sebelumnya, skip
                     if (deposit.cancelledAt) {
-                        continue;
+                        return;
                     }
 
                     await this.otpService.cancelDeposit(deposit.depositId).catch(() => {});
@@ -59,7 +60,7 @@ export class DepositChecker {
                             { parse_mode: 'Markdown' }
                         ).catch(() => {});
                     }
-                    continue;
+                    return;
                 }
 
                 // Jika belum 5 menit, cek statusnya ke API
@@ -67,9 +68,7 @@ export class DepositChecker {
                     const statusData = await this.otpService.checkDepositStatus(deposit.depositId);
                     
                     if (statusData.status === 'success') {
-                        deposit.status = 'success';
-                        await deposit.save();
-
+                        let channelSent = false;
                         const dbUser = deposit.user;
                         if (dbUser) {
                             // Tambah saldo secara Atomic menggunakan $inc
@@ -93,23 +92,26 @@ export class DepositChecker {
 
                             // Kirim Testi ke Channel
                             if (!deposit.channelSentAt) {
-                                await this.channelService.sendDepositTesti({
-                                    user: {
-                                        telegramId: dbUser.telegramId,
-                                        fullName: dbUser.fullName,
-                                        username: dbUser.username
-                                    },
-                                    depositId: deposit.depositId,
-                                    nominal: deposit.amount,
-                                    fee: deposit.fee,
-                                    received: deposit.amount,
-                                    balanceAfter: userToUpdate?.balance || 0,
-                                    total: deposit.total,
-                                    method: 'QRIS',
-                                    createdAt: new Date()
-                                }).catch(() => {});
-                                deposit.channelSentAt = new Date();
-                                await deposit.save();
+                                try {
+                                    await this.channelService.sendDepositTesti({
+                                        user: {
+                                            telegramId: dbUser.telegramId,
+                                            fullName: dbUser.fullName,
+                                            username: dbUser.username
+                                        },
+                                        depositId: deposit.depositId,
+                                        nominal: deposit.amount,
+                                        fee: deposit.fee,
+                                        received: deposit.amount,
+                                        balanceAfter: userToUpdate?.balance || 0,
+                                        total: deposit.total,
+                                        method: 'QRIS',
+                                        createdAt: new Date()
+                                    });
+                                    channelSent = true;
+                                } catch (sendError) {
+                                    console.error('Gagal kirim deposit testi ke channel:', sendError);
+                                }
                             }
 
                             // Notifikasi ke Owner Bot
@@ -121,11 +123,18 @@ export class DepositChecker {
                                 ).catch(() => {});
                             }
                         }
+                        
+                        // Save the deposit changes all at once
+                        deposit.status = 'success';
+                        if (channelSent) {
+                            deposit.channelSentAt = new Date();
+                        }
+                        await deposit.save();
                     }
                 } catch (err) {
                     console.error(`Gagal mengecek deposit ID ${deposit.depositId} ke API:`, err);
                 }
-            }
+            }));
         } catch (error) {
             console.error("❌ Terjadi Error di Global Deposit Checker:", error);
         } finally {

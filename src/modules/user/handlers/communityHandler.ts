@@ -6,7 +6,7 @@ const getTypeLabel = (type: 'channel' | 'group') => (type === 'channel' ? 'Chann
 const getTypeIcon = (type: 'channel' | 'group') => (type === 'channel' ? '📢' : '👥');
 
 const renderCommunityMenu = async (ctx: MyContext, isEdit = false) => {
-    const communities = await CommunityLink.find({ isActive: true })
+    const communities = await CommunityLink.find({ isActive: true }).lean()
         .sort({ order: 1, createdAt: 1 })
         .limit(40);
 

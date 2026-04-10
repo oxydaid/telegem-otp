@@ -373,23 +373,27 @@ export default (bot: Telegraf<MyContext>) => {
             );
 
             if (updatedTransaction && !updatedTransaction.channelSentAt && dbUser) {
-                await channelService.sendOtpTesti({
-                    user: {
-                        telegramId: dbUser.telegramId,
-                        fullName: dbUser.fullName,
-                        username: dbUser.username
-                    },
-                    serviceName: data.service,
-                    countryName: data.country,
-                    operatorName: data.operator || data.operator_name || 'any',
-                    orderId: data.order_id || orderId,
-                    phoneNumber: data.phone_number,
-                    otpCode: otp,
-                    price: updatedTransaction.price,
-                    createdAt: updatedTransaction.createdAt || new Date()
-                }).catch(() => {});
+                try {
+                    await channelService.sendOtpTesti({
+                        user: {
+                            telegramId: dbUser.telegramId,
+                            fullName: dbUser.fullName,
+                            username: dbUser.username
+                        },
+                        serviceName: data.service,
+                        countryName: data.country,
+                        operatorName: data.operator || data.operator_name || 'any',
+                        orderId: data.order_id || orderId,
+                        phoneNumber: data.phone_number,
+                        otpCode: otp,
+                        price: updatedTransaction.price,
+                        createdAt: updatedTransaction.createdAt || new Date()
+                    });
 
-                await Transaction.updateOne({ orderId }, { $set: { channelSentAt: new Date() } });
+                    await Transaction.updateOne({ orderId }, { $set: { channelSentAt: new Date() } });
+                } catch (sendError) {
+                    console.error('Gagal kirim OTP testi ke channel:', sendError);
+                }
             }
 
             const successCaption = `

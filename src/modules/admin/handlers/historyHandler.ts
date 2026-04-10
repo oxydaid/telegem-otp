@@ -60,7 +60,7 @@ const renderServiceTransactions = async (ctx: MyContext, page: number) => {
 
     const totalPages = Math.max(1, Math.ceil(totalTransactions / PAGINATION_CONFIG.ADMIN_HISTORY_PER_PAGE));
     const safePage = Math.min(Math.max(page, 1), totalPages);
-    const rows = await Transaction.find({})
+    const rows = await Transaction.find({}).lean()
         .populate('user', 'telegramId username fullName')
         .sort({ createdAt: -1 })
         .skip((safePage - 1) * PAGINATION_CONFIG.ADMIN_HISTORY_PER_PAGE)
@@ -117,7 +117,7 @@ const renderDepositTransactions = async (ctx: MyContext, page: number) => {
 
     const totalPages = Math.max(1, Math.ceil(totalDeposits / PAGINATION_CONFIG.ADMIN_HISTORY_PER_PAGE));
     const safePage = Math.min(Math.max(page, 1), totalPages);
-    const rows = await Deposit.find({})
+    const rows = await Deposit.find({}).lean()
         .populate('user', 'telegramId username fullName')
         .sort({ createdAt: -1 })
         .skip((safePage - 1) * PAGINATION_CONFIG.ADMIN_HISTORY_PER_PAGE)

@@ -56,7 +56,11 @@ const getOwnerMenuKeyboard = (panel: 'home' | 'mode' | 'stats' | 'balance' | 'to
                     { text: '📋 /listsaldo', callback_data: 'owner_hint_listsaldo' }
                 ],
                 [
-                    { text: '🗂 /backup', callback_data: 'owner_hint_backup' }
+                    { text: '🗂 /backup', callback_data: 'owner_hint_backup' },
+                    { text: '👥 /joingrup', callback_data: 'owner_hint_joingrup' }
+                ],
+                [
+                    { text: '📣 /joinch', callback_data: 'owner_hint_joinch' }
                 ],
                 [
                     { text: '⬅️ Kembali', callback_data: 'owner_home' }
@@ -133,7 +137,7 @@ Klik tombol toggle di bawah untuk ubah mode secara real-time.`;
     }
 
     if (panel === 'balance') {
-        const topUsers = await User.find({ balance: { $gt: 0 } }).sort({ balance: -1 }).limit(5);
+        const topUsers = await User.find({ balance: { $gt: 0 } }).lean().sort({ balance: -1 }).limit(5);
 
         if (topUsers.length === 0) {
             return `<blockquote><b>💳 Ringkasan Saldo</b></blockquote>
@@ -307,5 +311,15 @@ export const registerMenuHandlers = (bot: Telegraf<MyContext>) => {
     bot.action('owner_hint_backup', async (ctx) => {
         if (!(await ensureOwnerAction(ctx))) return;
         await safeAnswerCbQuery(ctx, 'Gunakan /backup untuk unduh data database (JSON).', { show_alert: true });
+    });
+
+    bot.action('owner_hint_joingrup', async (ctx) => {
+        if (!(await ensureOwnerAction(ctx))) return;
+        await safeAnswerCbQuery(ctx, 'Format: /joingrup <link_atau_username>', { show_alert: true });
+    });
+
+    bot.action('owner_hint_joinch', async (ctx) => {
+        if (!(await ensureOwnerAction(ctx))) return;
+        await safeAnswerCbQuery(ctx, 'Format: /joinch <link_atau_username>', { show_alert: true });
     });
 };

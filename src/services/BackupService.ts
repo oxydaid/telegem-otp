@@ -14,8 +14,10 @@ export class BackupService {
     private ownerId: number;
     private intervalMs: number;
     private static schedulerStarted = false;
+    private static backupRunning = false;
     private autoBackupInterval?: NodeJS.Timeout;
     private autoBackupTimeout?: NodeJS.Timeout;
+    private readonly schedulerKey = 'auto-backup-scheduler';
 
     constructor(bot: Telegraf<any>) {
         this.bot = bot;
@@ -24,6 +26,10 @@ export class BackupService {
     }
 
     async runBackup(isManual: boolean = false) {
+        if (!isManual && BackupService.backupRunning) {
+            return;
+        }
+
         let lockAcquired = false;
         if (!isManual) {
             const now = new Date();
@@ -32,6 +38,7 @@ export class BackupService {
 
             const lockResult = await Setting.findOneAndUpdate(
                 {
+                    autoBackupKey: this.schedulerKey,
                     $and: [
                         {
                             $or: [
@@ -51,7 +58,6 @@ export class BackupService {
                     $set: { backupLockUntil: lockUntil }
                 },
                 {
-                    upsert: true,
                     new: true
                 }
             );
@@ -61,6 +67,7 @@ export class BackupService {
             }
 
             lockAcquired = true;
+            BackupService.backupRunning = true;
         }
 
         const waktuMoment = moment().tz("Asia/Jakarta");
@@ -140,7 +147,11 @@ export class BackupService {
             await this.bot.telegram.sendDocument(this.ownerId, { source: zipPath }, { caption: captionText, parse_mode: "Markdown" });
 
             // 6. Simpan waktu backup ke DB
-            await Setting.updateOne({}, { lastBackupAt: new Date(), backupLockUntil: null }, { upsert: true });
+            await Setting.updateOne(
+                { autoBackupKey: this.schedulerKey },
+                { $set: { lastBackupAt: new Date(), backupLockUntil: null }, $setOnInsert: { autoBackupKey: this.schedulerKey } },
+                { upsert: true }
+            );
 
             // 7. Bersihkan file ZIP lokal
             fs.unlinkSync(zipPath);
@@ -151,7 +162,11 @@ export class BackupService {
 
         } catch (error: any) {
             if (lockAcquired) {
-                await Setting.updateOne({}, { backupLockUntil: null }, { upsert: true });
+                await Setting.updateOne(
+                    { autoBackupKey: this.schedulerKey },
+                    { $set: { backupLockUntil: null }, $setOnInsert: { autoBackupKey: this.schedulerKey } },
+                    { upsert: true }
+                );
             }
 
             if (animInterval && msgAnim) {
@@ -160,6 +175,10 @@ export class BackupService {
                 await this.bot.telegram.editMessageText(this.ownerId, msgAnim.message_id, undefined, `⚠️ Backup gagal!\n\nDetail:\n${safeError}`);
             }
             console.error('Backup Error:', error);
+        } finally {
+            if (!isManual) {
+                BackupService.backupRunning = false;
+            }
         }
     }
 
@@ -169,8 +188,14 @@ export class BackupService {
         }
         BackupService.schedulerStarted = true;
 
-        let settings = await Setting.findOne();
-        if (!settings) settings = await Setting.create({});
+        await Setting.updateOne(
+            { autoBackupKey: this.schedulerKey },
+            { $setOnInsert: { autoBackupKey: this.schedulerKey } },
+            { upsert: true }
+        ).catch(() => {});
+
+        const settings = await Setting.findOne({ autoBackupKey: this.schedulerKey });
+        if (!settings) return;
 
         const lastBackup = settings.lastBackupAt ? settings.lastBackupAt.getTime() : null;
         const now = Date.now();

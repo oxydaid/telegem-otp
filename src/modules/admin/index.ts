@@ -13,6 +13,7 @@ import { registerUserHandlers } from './handlers/userHandler';
 import { registerHistoryHandlers } from './handlers/historyHandler';
 import { registerAllToolsHandlers } from './handlers/toolsHandler';
 import { registerChannelHandlers } from './handlers/channelHandler';
+import { registerGuideAdminHandlers } from './handlers/guideAdminHandler';
 
 export default (bot: Telegraf<MyContext>) => {
     // ==========================================
@@ -33,6 +34,9 @@ export default (bot: Telegraf<MyContext>) => {
 
     // Community Management Handlers (Channel/Group dynamic list)
     registerChannelHandlers(bot);
+
+    // Guide Management Handlers (CRUD, reorder, wizard)
+    registerGuideAdminHandlers(bot);
 
     // ==========================================
     // ✅ Admin module fully initialized

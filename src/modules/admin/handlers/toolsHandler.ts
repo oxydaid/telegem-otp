@@ -10,6 +10,25 @@ import { Setting } from '../../../models/Setting';
 import { ADMIN_CONFIG } from '../utils/constants';
 import { adminGuard, parseToggle, getOrCreateSettings } from '../utils/helpers';
 import { formatCurrency } from '../utils/formatters';
+import { UpdaterService } from '../../../services/UpdaterService';
+
+const backupExecutionLocks = new Set<number>();
+let isUpdatingNow = false;
+
+const normalizeChatTarget = (rawInput: string): string => {
+    const input = rawInput.trim();
+
+    if (!input) return '';
+
+    if (input.startsWith('@')) return input;
+
+    const match = input.match(/(?:https?:\/\/)?(?:t\.me|telegram\.me)\/([^\s/?#]+)/i);
+    if (match?.[1]) {
+        return `@${match[1].replace(/^@+/, '')}`;
+    }
+
+    return input;
+};
 
 /**
  * Register mode setting commands
@@ -43,6 +62,16 @@ export const registerModeCommands = (bot: Telegraf<MyContext>) => {
  */
 export const registerBackupCommand = (bot: Telegraf<MyContext>) => {
     bot.command('backup', adminGuard, async (ctx) => {
+        const ownerId = ctx.from?.id;
+        if (!ownerId) {
+            return ctx.reply('❌ Gagal mengenali akun owner.');
+        }
+
+        if (backupExecutionLocks.has(ownerId)) {
+            return;
+        }
+
+        backupExecutionLocks.add(ownerId);
         const processingMsg = await ctx.reply('🗂 Menyiapkan backup database...');
 
         try {
@@ -97,6 +126,8 @@ export const registerBackupCommand = (bot: Telegraf<MyContext>) => {
         } catch (error: any) {
             await bot.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id).catch(() => {});
             await ctx.reply(`❌ Backup gagal: ${error.message}`);
+        } finally {
+            backupExecutionLocks.delete(ownerId);
         }
     });
 };
@@ -106,7 +137,7 @@ export const registerBackupCommand = (bot: Telegraf<MyContext>) => {
  */
 export const registerListSaldoCommand = (bot: Telegraf<MyContext>) => {
     bot.command('listsaldo', adminGuard, async (ctx) => {
-        const users = await User.find({ balance: { $gt: 0 } }).sort({ balance: -1 }).limit(20);
+        const users = await User.find({ balance: { $gt: 0 } }).lean().sort({ balance: -1 }).limit(20);
         
         if (users.length === 0) return ctx.reply('📭 Belum ada user yang memiliki saldo.');
 
@@ -251,7 +282,7 @@ export const registerBroadcastCommand = (bot: Telegraf<MyContext>) => {
         const statusMsg = await ctx.reply('🚀 Memulai broadcast...');
         
         try {
-            const users = await User.find({}, 'telegramId');
+            const users = await User.find({}, 'telegramId').lean();
             if (users.length === 0) return ctx.reply('⚠️ Tidak ada user terdaftar.');
 
             let success = 0;
@@ -288,6 +319,119 @@ export const registerBroadcastCommand = (bot: Telegraf<MyContext>) => {
 };
 
 /**
+ * Join group/channel by link or username
+ */
+export const registerJoinChatCommands = (bot: Telegraf<MyContext>) => {
+    const executeJoin = async (ctx: MyContext, targetType: 'group' | 'channel') => {
+        if (!ctx.message || !('text' in ctx.message)) {
+            return ctx.reply('❌ Perintah hanya bisa dipakai lewat pesan teks.');
+        }
+
+        const args = ctx.message.text.split(' ').filter(Boolean);
+
+        if (args.length < 2) {
+            const commandName = targetType === 'group' ? '/joingrup' : '/joinch';
+            return ctx.reply(
+                `❗ *Format salah!*\nGunakan: \`${commandName} <link_atau_username>\`\nContoh: \`${commandName} https://t.me/namagrup\``,
+                { parse_mode: 'Markdown' }
+            );
+        }
+
+        const target = normalizeChatTarget(args[1]);
+        if (!target) {
+            return ctx.reply('❌ Link/username tujuan tidak valid.');
+        }
+
+        const waitingMsg = await ctx.reply('⏳ Bot sedang mencoba bergabung...');
+        const chatId = ctx.chat?.id;
+
+        try {
+            const result = await (bot.telegram as any).callApi('joinChat', { chat_id: target }) as {
+                id: number;
+                title?: string;
+                username?: string;
+            };
+
+            const title = result.title || result.username || target;
+            await ctx.reply(
+                `✅ Berhasil join ${targetType === 'group' ? 'grup' : 'channel'}: *${title}*\n🆔 Chat ID: \`${result.id}\``,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (error: any) {
+            const reason = error?.response?.description || error?.message || 'Unknown error';
+            await ctx.reply(
+                `❌ Gagal join ${targetType === 'group' ? 'grup' : 'channel'}.\nAlasan: \`${reason}\`\n\nPastikan link valid dan bot diizinkan masuk.`,
+                { parse_mode: 'Markdown' }
+            );
+        } finally {
+            if (chatId) {
+                await bot.telegram.deleteMessage(chatId, waitingMsg.message_id).catch(() => {});
+            }
+        }
+    };
+
+    bot.command(['joingrup', 'joigrup'], adminGuard, async (ctx) => {
+        await executeJoin(ctx, 'group');
+    });
+
+    bot.command('joinch', adminGuard, async (ctx) => {
+        await executeJoin(ctx, 'channel');
+    });
+};
+
+/**
+ * Check and run application update
+ */
+export const registerUpdaterCommands = (bot: Telegraf<MyContext>) => {
+    const updaterService = new UpdaterService();
+
+    bot.command('changelog', adminGuard, async (ctx) => {
+        const loadingMsg = await ctx.reply('📘 Mengambil changelog versi saat ini...');
+
+        try {
+            const message = await updaterService.getCurrentVersionChangelogMessage();
+            await ctx.reply(message, { parse_mode: 'Markdown' });
+        } catch (error: any) {
+            await ctx.reply(`❌ Gagal mengambil changelog: ${error.message}`);
+        } finally {
+            await bot.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+        }
+    });
+
+    bot.command(['checkupdate', 'cekupdate'], adminGuard, async (ctx) => {
+        const loadingMsg = await ctx.reply('🔎 Mengecek pembaruan...');
+
+        try {
+            const result = await updaterService.checkUpdate();
+            await ctx.reply(result.message, { parse_mode: 'Markdown' });
+        } catch (error: any) {
+            await ctx.reply(`❌ Gagal mengecek pembaruan: ${error.message}`);
+        } finally {
+            await bot.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+        }
+    });
+
+    bot.command('update', adminGuard, async (ctx) => {
+        if (isUpdatingNow) {
+            return ctx.reply('⏳ Proses update sedang berjalan. Tunggu sampai selesai.');
+        }
+
+        isUpdatingNow = true;
+        const loadingMsg = await ctx.reply('⬇️ Mengunduh & menginstal update...');
+
+        try {
+            const resultMessage = await updaterService.runUpdate();
+            await ctx.reply(resultMessage, { parse_mode: 'Markdown' });
+        } catch (error: any) {
+            await ctx.reply(`❌ Update gagal: ${error.message}`);
+        } finally {
+            isUpdatingNow = false;
+            await bot.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(() => {});
+        }
+    });
+};
+
+/**
  * Register all tools handlers
  */
 export const registerAllToolsHandlers = (bot: Telegraf<MyContext>) => {
@@ -298,4 +442,6 @@ export const registerAllToolsHandlers = (bot: Telegraf<MyContext>) => {
     registerDelSaldoCommand(bot);
     registerBlacklistCommands(bot);
     registerBroadcastCommand(bot);
+    registerJoinChatCommands(bot);
+    registerUpdaterCommands(bot);
 };

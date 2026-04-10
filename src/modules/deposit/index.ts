@@ -10,6 +10,13 @@ export default (bot: Telegraf<MyContext>) => {
     const otpService = new RumahOtpService();
     const channelService = new ChannelService(bot);
 
+    const parseDepositAmount = (rawText: string): number => {
+        // Support berbagai format input manual: "5000", "10.000", "Rp 10.000", dll.
+        const digitsOnly = rawText.replace(/[^\d]/g, '');
+        if (!digitsOnly) return NaN;
+        return Number(digitsOnly);
+    };
+
     const showTopupWizard = async (ctx: any) => {
         if (ctx.session) ctx.session.awaitingDeposit = false;
         
@@ -76,7 +83,8 @@ export default (bot: Telegraf<MyContext>) => {
 
     bot.action('topup_manual', async (ctx) => {
         await ctx.answerCbQuery().catch(() => {});
-        if (ctx.session) ctx.session.awaitingDeposit = true;
+        ctx.session = ctx.session || {};
+        ctx.session.awaitingDeposit = true;
 
         const text = `✍️ *INPUT MANUAL*\n\nSilakan balas pesan ini dengan nominal deposit yang ingin kamu isi.\n\n💡 *Minimal Rp 2.000*\nContoh ketik: \`5000\``;
         const keyboard = {
@@ -94,13 +102,13 @@ export default (bot: Telegraf<MyContext>) => {
         const dbUser = ctx.dbUser;
         if (!dbUser || !ctx.session?.awaitingDeposit) return next(); // Lanjut ke perintah lain jika bukan sedang deposit
 
-        // Matikan session agar tidak terus-terusan meminta deposit
-        ctx.session.awaitingDeposit = false;
-
-        const amount = parseInt(ctx.message.text.trim());
+        const amount = parseDepositAmount(ctx.message.text.trim());
         if (isNaN(amount) || amount < 2000) {
-            return ctx.reply('🚫 *Gagal:* Minimal deposit adalah Rp 2.000!\nSilakan klik tombol Top Up lagi.', { parse_mode: 'Markdown' });
+            return ctx.reply('🚫 *Nominal tidak valid.*\nMasukkan angka deposit minimal Rp 2.000.\nContoh: `5000` atau `10.000`', { parse_mode: 'Markdown' });
         }
+
+        // Matikan session setelah nominal valid agar flow tidak bentrok ke pesan berikutnya.
+        ctx.session.awaitingDeposit = false;
 
         const text = `⚠️ *KONFIRMASI DEPOSIT*\n\nKamu akan melakukan top up saldo sebesar *Rp ${amount.toLocaleString('id-ID')}*.\nLanjutkan?`;
         const keyboard = {
@@ -262,24 +270,28 @@ export default (bot: Telegraf<MyContext>) => {
             }
 
             if (!updatedDeposit.channelSentAt) {
-                await channelService.sendDepositTesti({
-                    user: {
-                        telegramId: userToUpdate.telegramId,
-                        fullName: userToUpdate.fullName,
-                        username: userToUpdate.username
-                    },
-                    depositId: updatedDeposit.depositId,
-                    nominal: updatedDeposit.amount,
-                    fee: updatedDeposit.fee,
-                    received: updatedDeposit.amount,
-                    balanceAfter: userToUpdate.balance,
-                    total: updatedDeposit.total,
-                    method: 'QRIS',
-                    createdAt: new Date()
-                }).catch(() => {});
+                try {
+                    await channelService.sendDepositTesti({
+                        user: {
+                            telegramId: userToUpdate.telegramId,
+                            fullName: userToUpdate.fullName,
+                            username: userToUpdate.username
+                        },
+                        depositId: updatedDeposit.depositId,
+                        nominal: updatedDeposit.amount,
+                        fee: updatedDeposit.fee,
+                        received: updatedDeposit.amount,
+                        balanceAfter: userToUpdate.balance,
+                        total: updatedDeposit.total,
+                        method: 'QRIS',
+                        createdAt: new Date()
+                    });
 
-                updatedDeposit.channelSentAt = new Date();
-                await updatedDeposit.save();
+                    updatedDeposit.channelSentAt = new Date();
+                    await updatedDeposit.save();
+                } catch (sendError) {
+                    console.error('Gagal kirim deposit testi ke channel:', sendError);
+                }
             }
 
             if (process.env.OWNER_ID) {

@@ -6,6 +6,7 @@ import { loadModules } from './core/loader';
 import { systemGuard } from './middlewares/guard';
 import { BackupService } from './services/BackupService';
 import { DepositChecker } from './services/DepositChecker';
+import { UpdateMonitorService } from './services/UpdateMonitorService';
 import { startWebhookServer } from './infrastructure/webhook';
 
 const isExpiredCallbackQueryError = (error: unknown) => {
@@ -68,6 +69,9 @@ const startApp = async () => {
     const backupService = new BackupService(bot);
     backupService.startAutoBackup(); 
 
+    const updateMonitorService = new UpdateMonitorService(bot);
+    updateMonitorService.start();
+
     if (botMode === 'webhook') {
         const domain = process.env.WEBHOOK_DOMAIN;
         if (!domain) {
@@ -91,8 +95,14 @@ const startApp = async () => {
         });
     }
 
-    process.once('SIGINT', () => bot.stop('SIGINT'));
-    process.once('SIGTERM', () => bot.stop('SIGTERM'));
+    process.once('SIGINT', () => {
+        updateMonitorService.stop();
+        bot.stop('SIGINT');
+    });
+    process.once('SIGTERM', () => {
+        updateMonitorService.stop();
+        bot.stop('SIGTERM');
+    });
 };
 
 startApp();

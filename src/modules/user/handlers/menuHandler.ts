@@ -120,7 +120,7 @@ Kelola topup saldo dan lihat history deposit Anda di sini.
     }
 
     if (panel === 'leaderboard') {
-        const topUsers = await User.find({ balance: { $gt: 0 } }).sort({ balance: -1 }).limit(5);
+        const topUsers = await User.find({ balance: { $gt: 0 } }).lean().sort({ balance: -1 }).limit(5);
 
         if (topUsers.length === 0) {
             return `<blockquote><b>🏆 Leaderboard Top Saldo</b></blockquote>

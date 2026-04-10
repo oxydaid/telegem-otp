@@ -1,14 +1,16 @@
 {
   "name": "telegem-otp-bot",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Bot telegram untuk order nomor virtual",
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/app.ts",
-    "build": "tsup src/app.ts --format cjs --target node20 --minify --sourcemap --clean --out-dir dist",
-    "build:prod": "tsup src/app.ts --format cjs --target node20 --minify --clean --out-dir dist",
+    "clean": "rimraf dist",
+    "build": "pnpm clean && pnpm exec esbuild \"src/**/*.ts\" --outdir=dist --outbase=src --platform=node --format=cjs --target=node20 --minify --sourcemap",
+    "build:prod": "pnpm clean && pnpm exec esbuild \"src/**/*.ts\" --outdir=dist --outbase=src --platform=node --format=cjs --target=node20 --minify",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/app.js"
+    "start": "node dist/app.js",
+    "restore": "ts-node src/scripts/restore.ts"
   },
   "keywords": [],
   "author": "Oxyda ID",
@@ -30,9 +32,10 @@
     "@types/body-parser": "^1.19.6",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.2",
+    "esbuild": "^0.28.0",
     "nodemon": "^3.1.14",
+    "rimraf": "^6.1.3",
     "ts-node": "^10.9.2",
-    "tsup": "^8.5.1",
     "typescript": "^6.0.2"
   }
 }

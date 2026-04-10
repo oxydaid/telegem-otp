@@ -29,5 +29,6 @@ const depositSchema = new Schema<IDeposit>({
 
 // Adding Compound Index to optimize frequent search
 depositSchema.index({ user: 1, status: 1 });
+depositSchema.index({ status: 1 }); // Optimize Global Deposit Checker
 
 export const Deposit = mongoose.model<IDeposit>('Deposit', depositSchema);

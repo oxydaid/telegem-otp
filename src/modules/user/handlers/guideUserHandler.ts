@@ -95,7 +95,7 @@ const sendGuideContent = async (ctx: MyContext, guide: IGuide) => {
 // 📋 RENDER MENU PANDUAN USER
 // ==========================================
 export const renderUserGuideMenu = async (ctx: MyContext, isEdit = false) => {
-    const guides = await Guide.find({ isActive: true }).sort({ order: 1, createdAt: 1 });
+    const guides = await Guide.find({ isActive: true }).lean().sort({ order: 1, createdAt: 1 });
 
     if (guides.length === 0) {
         const emptyText = `<blockquote><b>📖 Menu Panduan</b></blockquote>\n\nBelum ada panduan tersedia saat ini.\nSilakan hubungi admin jika butuh bantuan.`;

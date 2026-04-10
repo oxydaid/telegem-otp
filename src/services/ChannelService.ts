@@ -63,11 +63,13 @@ export class ChannelService {
 	}
 
 	async sendOtpTesti(payload: OtpTestiPayload) {
-		if (!this.channelId) return null;
+		if (!this.channelId) {
+			throw new Error('TESTI_CHANNEL_ID atau CHANNEL_ID belum diset');
+		}
 
 		const displayName = payload.user.username ? `@${payload.user.username}` : payload.user.fullName;
 		const caption = [
-			`<blockquote><b>OkeOtp Testi</b></blockquote>`,
+			`<blockquote><b>${escapeHtml(process.env.BOT_NAME || 'Bot')} Testi</b></blockquote>`,
 			`<b>📣 Transaksi OTP Selesai</b>`,
 			'',
 			`📱 <b>Layanan:</b> ${escapeHtml(payload.serviceName)}`,
@@ -97,11 +99,13 @@ export class ChannelService {
 	}
 
 	async sendDepositTesti(payload: DepositTestiPayload) {
-		if (!this.channelId) return null;
+		if (!this.channelId) {
+			throw new Error('TESTI_CHANNEL_ID atau CHANNEL_ID belum diset');
+		}
 
 		const displayName = payload.user.username ? `@${payload.user.username}` : payload.user.fullName;
 		const caption = [
-			`<blockquote><b>OkeOtp Testi</b></blockquote>`,
+			`<blockquote><b>${escapeHtml(process.env.BOT_NAME || 'Bot')} Testi</b></blockquote>`,
 			`<b>💰 Deposit OTP Berhasil!</b>`,
 			'',
 			`🧾 <b>ID Pembayaran:</b> <code>${escapeHtml(payload.depositId)}</code>`,

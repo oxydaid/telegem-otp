@@ -38,7 +38,7 @@ export default (bot: Telegraf<MyContext>) => {
         const safePage = Math.min(Math.max(page, 1), totalPages);
 
         // Ambil data dari MongoDB (Teroptimasi dengan limit & skip, diurutkan dari yang terbaru)
-        const transactions = await Transaction.find({ user: dbUser._id })
+        const transactions = await Transaction.find({ user: dbUser._id }).lean()
             .sort({ createdAt: -1 })
             .skip((safePage - 1) * PER_PAGE)
             .limit(PER_PAGE);
@@ -92,7 +92,7 @@ export default (bot: Telegraf<MyContext>) => {
         const totalPages = Math.ceil(totalDeposits / PER_PAGE);
         const safePage = Math.min(Math.max(page, 1), totalPages);
 
-        const deposits = await Deposit.find({ user: dbUser._id })
+        const deposits = await Deposit.find({ user: dbUser._id }).lean()
             .sort({ createdAt: -1 })
             .skip((safePage - 1) * PER_PAGE)
             .limit(PER_PAGE);

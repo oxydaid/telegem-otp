@@ -7,6 +7,7 @@ export interface ISetting extends Document {
     isGroupOnly: boolean;
     isJoinChannelRequired: boolean;
     globalCooldown: number;
+    autoBackupKey?: string;
     lastBackupAt: Date | null;
     backupLockUntil: Date | null;
 }
@@ -17,6 +18,7 @@ const settingSchema = new Schema<ISetting>({
     isGroupOnly: { type: Boolean, default: false },
     isJoinChannelRequired: { type: Boolean, default: false },
     globalCooldown: { type: Number, default: 0 },
+    autoBackupKey: { type: String, default: null, unique: true, sparse: true },
     lastBackupAt: { type: Date, default: null },
     backupLockUntil: { type: Date, default: null }
 });
