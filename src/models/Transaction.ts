@@ -11,6 +11,8 @@ export interface ITransaction extends Document {
     status: 'pending' | 'success' | 'canceled';
     otpCode?: string;
     channelSentAt?: Date | null;
+    refundedAt?: Date | null;    // Track kapan refund terjadi (prevent double refund)
+    refundedBy?: 'user' | 'api' | 'timeout'; // Track siapa yang trigger refund
     createdAt: Date;
 }
 
@@ -24,7 +26,12 @@ const transactionSchema = new Schema<ITransaction>({
     status: { type: String, enum: ['pending', 'success', 'canceled'], default: 'pending' },
     otpCode: { type: String, default: null },
     channelSentAt: { type: Date, default: null },
+    refundedAt: { type: Date, default: null },
+    refundedBy: { type: String, enum: ['user', 'api', 'timeout'], default: null },
     createdAt: { type: Date, default: Date.now }
 });
+
+// Adding compound index to optimize finding user transactions efficiently
+transactionSchema.index({ user: 1, status: 1 });
 
 export const Transaction = mongoose.model<ITransaction>('Transaction', transactionSchema);

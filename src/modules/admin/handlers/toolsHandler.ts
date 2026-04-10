@@ -140,12 +140,15 @@ export const registerAddSaldoCommand = (bot: Telegraf<MyContext>) => {
         }
 
         try {
-            const targetUser = await User.findOne({ telegramId: targetId });
+            const targetUser = await User.findOneAndUpdate(
+                { telegramId: targetId },
+                { $inc: { balance: amount } },
+                { returnDocument: 'after' }
+            );
+            
             if (!targetUser) return ctx.reply(`❌ User dengan ID \`${targetId}\` tidak ditemukan di database.`, { parse_mode: 'Markdown' });
 
-            const saldoAwal = targetUser.balance;
-            targetUser.balance += amount;
-            await targetUser.save();
+            const saldoAwal = targetUser.balance - amount;
 
             // Notifikasi ke Admin
             await ctx.reply(`✅ *Saldo Berhasil Ditambahkan!*\n\n👤 Target: \`${targetId}\`\n💵 Sebelumnya: ${formatCurrency(saldoAwal)}\n➕ Ditambah: ${formatCurrency(amount)}\n💼 Total: ${formatCurrency(targetUser.balance)}`, { parse_mode: 'Markdown' });
@@ -174,16 +177,20 @@ export const registerDelSaldoCommand = (bot: Telegraf<MyContext>) => {
         const amount = Number(args[2]);
 
         try {
-            const targetUser = await User.findOne({ telegramId: targetId });
-            if (!targetUser) return ctx.reply(`❌ User tidak ditemukan.`, { parse_mode: 'Markdown' });
+            const targetUser = await User.findOneAndUpdate(
+                { telegramId: targetId, balance: { $gte: amount } },
+                { $inc: { balance: -amount } },
+                { returnDocument: 'after' }
+            );
 
-            if (targetUser.balance < amount) {
-                return ctx.reply(`❌ Saldo user tidak mencukupi!\nSaldo saat ini: *${formatCurrency(targetUser.balance)}*`, { parse_mode: 'Markdown' });
+            if (!targetUser) {
+                // Return descriptive error
+                const userExists = await User.findOne({ telegramId: targetId });
+                if (!userExists) return ctx.reply(`❌ User tidak ditemukan.`, { parse_mode: 'Markdown' });
+                return ctx.reply(`❌ Saldo user tidak mencukupi!\nSaldo saat ini: *${formatCurrency(userExists.balance)}*`, { parse_mode: 'Markdown' });
             }
 
-            const saldoAwal = targetUser.balance;
-            targetUser.balance -= amount;
-            await targetUser.save();
+            const saldoAwal = targetUser.balance + amount;
 
             await ctx.reply(`✅ *Saldo Berhasil Dikurangi!*\n\n👤 Target: \`${targetId}\`\n💵 Sebelumnya: ${formatCurrency(saldoAwal)}\n➖ Dikurangi: ${formatCurrency(amount)}\n💼 Total: ${formatCurrency(targetUser.balance)}`, { parse_mode: 'Markdown' });
 
@@ -204,7 +211,7 @@ export const registerBlacklistCommands = (bot: Telegraf<MyContext>) => {
         const targetId = Number(args[1]);
 
         try {
-            const user = await User.findOneAndUpdate({ telegramId: targetId }, { isBlacklisted: true }, { new: true });
+            const user = await User.findOneAndUpdate({ telegramId: targetId }, { isBlacklisted: true }, { returnDocument: 'after' });
             if (!user) return ctx.reply('❌ User tidak ditemukan.');
 
             await ctx.reply(`🚫 User \`${targetId}\` berhasil di-blacklist! Mereka tidak akan bisa menggunakan bot lagi.`, { parse_mode: 'Markdown' });
@@ -220,7 +227,7 @@ export const registerBlacklistCommands = (bot: Telegraf<MyContext>) => {
         const targetId = Number(args[1]);
 
         try {
-            const user = await User.findOneAndUpdate({ telegramId: targetId }, { isBlacklisted: false }, { new: true });
+            const user = await User.findOneAndUpdate({ telegramId: targetId }, { isBlacklisted: false }, { returnDocument: 'after' });
             if (!user) return ctx.reply('❌ User tidak ditemukan.');
 
             await ctx.reply(`✅ User \`${targetId}\` telah dihapus dari daftar blacklist.`, { parse_mode: 'Markdown' });

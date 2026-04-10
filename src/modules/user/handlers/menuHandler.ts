@@ -11,7 +11,7 @@ const getUserMenuKeyboard = (panel: 'home' | 'profile' | 'services' | 'history' 
             inline_keyboard: [
                 [
                     { text: '💳 Topup Saldo', callback_data: 'user_topup' },
-                    { text: '📊 Riwayat Deposit', callback_data: 'user_history_deposit' }
+                    { text: '📊 Riwayat Deposit', callback_data: 'history_deposit_user' }
                 ],
                 [
                     { text: '⬅️ Kembali', callback_data: 'user_home' },
@@ -25,7 +25,7 @@ const getUserMenuKeyboard = (panel: 'home' | 'profile' | 'services' | 'history' 
         return {
             inline_keyboard: [
                 [
-                    { text: '📊 Riwayat Deposit', callback_data: 'user_history_deposit' }
+                    { text: '📊 Riwayat Deposit', callback_data: 'history_deposit_user' }
                 ],
                 [
                     { text: '⬅️ Kembali', callback_data: 'user_home' }
@@ -39,7 +39,7 @@ const getUserMenuKeyboard = (panel: 'home' | 'profile' | 'services' | 'history' 
             inline_keyboard: [
                 [
                     { text: '💰 Lihat Cara Topup', callback_data: 'user_topup_guide' },
-                    { text: '📋 List Order', callback_data: 'user_history' }
+                    { text: '📋 List Order', callback_data: 'history_orderbot' }
                 ],
                 [
                     { text: '⬅️ Kembali', callback_data: 'user_home' }
@@ -67,10 +67,10 @@ const getUserMenuKeyboard = (panel: 'home' | 'profile' | 'services' | 'history' 
             ],
             [
                 { text: '💰 Topup Saldo', callback_data: 'user_topup' },
-                { text: '🛒 Riwayat Order', callback_data: 'user_history' }
+                { text: '🛒 Riwayat Order', callback_data: 'history_orderbot' }
             ],
             [
-                { text: '📊 Riwayat Deposit', callback_data: 'user_history_deposit' },
+                { text: '📊 Riwayat Deposit', callback_data: 'history_deposit_user' },
                 { text: '🏆 Leaderboard', callback_data: 'user_leaderboard' }
             ],
             [
@@ -137,7 +137,8 @@ Belum ada user dengan saldo.`;
         return text;
     }
 
-    const totalUsers = await User.countDocuments();
+    // Gunakan estimatedDocumentCount() untuk performa instan (O(1)) tanpa perlu memindai seluruh dokumen satu persatu
+    const totalUsers = await User.estimatedDocumentCount();
 
     return `<blockquote><b>🌐 ${USER_CONFIG.BOT_NAME}</b></blockquote>
 
@@ -208,13 +209,13 @@ export const registerMenuHandlers = (bot: Telegraf<MyContext>) => {
         await renderUserMenu(ctx, 'profile', true);
     });
 
-    bot.action('user_history', async (ctx) => {
+    bot.action('user_history_panel', async (ctx) => {
         if (!(await ensureUserAuth(ctx))) return;
         await ctx.answerCbQuery();
         await renderUserMenu(ctx, 'history', true);
     });
 
-    bot.action('user_history_deposit', async (ctx) => {
+    bot.action('user_history_deposit_panel', async (ctx) => {
         if (!(await ensureUserAuth(ctx))) return;
         await ctx.answerCbQuery();
         await renderUserMenu(ctx, 'deposit', true);
@@ -229,11 +230,6 @@ export const registerMenuHandlers = (bot: Telegraf<MyContext>) => {
     // ==========================================
     // 3. QUICK ACTIONS
     // ==========================================
-    bot.action('user_topup', async (ctx) => {
-        if (!(await ensureUserAuth(ctx))) return;
-        await ctx.answerCbQuery('Gunakan /topup_nokos atau kembali ke menu pilih Topup Saldo.', { show_alert: true });
-    });
-
     bot.action('user_topup_guide', async (ctx) => {
         if (!(await ensureUserAuth(ctx))) return;
         await ctx.answerCbQuery('Klik tombol Topup Saldo untuk cara deposit lengkap.', { show_alert: true });

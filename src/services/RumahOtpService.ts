@@ -9,10 +9,10 @@ export interface IOtpService {
 export class RumahOtpService {
     private api: AxiosInstance;
     
-    // In-Memory Cache sementara pengganti Redis
-    private cacheServices: IOtpService[] = []; 
-    private cacheCountries: Record<string, any[]> = {};
-    private cacheH2hProducts: any[] = [];
+    // In-Memory Cache dengan TTL (menggantikan cache permanen)
+    private cacheServices: { data: IOtpService[], expiresAt: number } = { data: [], expiresAt: 0 }; 
+    private cacheCountries: Record<string, { data: any[], expiresAt: number }> = {};
+    private cacheH2hProducts: { data: any[], expiresAt: number } = { data: [], expiresAt: 0 };
 
     constructor() {
         const apiKey = process.env.RUMAHOTP_API_KEY;
@@ -30,13 +30,16 @@ export class RumahOtpService {
 
     async getServices(): Promise<IOtpService[]> {
         try {
-            // ✅ FIX: Cek berdasarkan panjang array (length)
-            if (this.cacheServices.length > 0) return this.cacheServices;
+            // Cek apakah cache ada dan belum kadaluarsa (TTL 5 menit)
+            if (this.cacheServices.expiresAt > Date.now()) return this.cacheServices.data;
 
             const response = await this.api.get('/services');
             if (response.data?.success && Array.isArray(response.data?.data)) {
-                this.cacheServices = response.data.data; 
-                return this.cacheServices;
+                this.cacheServices = {
+                    data: response.data.data,
+                    expiresAt: Date.now() + 5 * 60 * 1000 // 5 menit
+                }; 
+                return this.cacheServices.data;
             }
             throw new Error("Format respons API tidak valid");
         } catch (error: any) {
@@ -47,14 +50,19 @@ export class RumahOtpService {
 
     async getCountries(serviceId: string): Promise<any[]> {
         try {
-            // Gunakan cache spesifik per layanan jika sudah ada
-            if (this.cacheCountries[serviceId]) return this.cacheCountries[serviceId];
+            // Evaluasi cache spesifik per layanan, TTL 1 menit agar stok terupdate
+            if (this.cacheCountries[serviceId] && this.cacheCountries[serviceId].expiresAt > Date.now()) {
+                return this.cacheCountries[serviceId].data;
+            }
 
             const response = await this.api.get(`/countries?service_id=${serviceId}`);
             if (response.data?.success && Array.isArray(response.data?.data)) {
                 // Filter hanya yang ada stok dan simpan ke cache
                 const available = response.data.data.filter((c: any) => c.stock_total > 0);
-                this.cacheCountries[serviceId] = available;
+                this.cacheCountries[serviceId] = {
+                    data: available,
+                    expiresAt: Date.now() + 60 * 1000 // 1 menit (karena stok cepat berubah)
+                };
                 return available;
             }
             throw new Error("Gagal mengambil data negara");
@@ -132,13 +140,16 @@ export class RumahOtpService {
 
     async getH2hProducts() {
         try {
-            if (this.cacheH2hProducts.length > 0) return this.cacheH2hProducts;
+            if (this.cacheH2hProducts.expiresAt > Date.now()) return this.cacheH2hProducts.data;
 
             const response = await this.api.get('https://www.rumahotp.io/api/v1/h2h/product');
             if (response.data?.success) {
                 // Urutkan otomatis dari termurah ke termahal
                 const sorted = response.data.data.sort((a: any, b: any) => a.price - b.price);
-                this.cacheH2hProducts = sorted;
+                this.cacheH2hProducts = {
+                    data: sorted,
+                    expiresAt: Date.now() + 5 * 60 * 1000 // 5 menit
+                };
                 return sorted;
             }
             throw new Error("Gagal mengambil produk H2H.");

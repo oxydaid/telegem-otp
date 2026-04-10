@@ -20,6 +20,10 @@ export interface MyContext extends Context {
     session?: SessionData; // 👈 Tambahkan baris ini!
 }
 
+// 1. Variabel Cache Global untuk Settings (TTL 15 Detik)
+let cachedSettings: any = null;
+let lastSettingsFetch = 0;
+
 export const systemGuard = async (ctx: MyContext, next: () => Promise<void>) => {
     // Jika bukan dari user (misal update dari channel), lewati
     if (!ctx.from) return next();
@@ -28,9 +32,15 @@ export const systemGuard = async (ctx: MyContext, next: () => Promise<void>) => 
     const isOwner = ctx.from.id === OWNER_ID;
 
     try {
-        // 1. Ambil atau buat pengaturan global (Hanya ada 1 dokumen di database)
-        let settings = await Setting.findOne();
-        if (!settings) settings = await Setting.create({});
+        // Optimasi: Membaca Settings menggunakan Cache 15 Detik dan .lean()
+        if (!cachedSettings || Date.now() - lastSettingsFetch > 15000) {
+            let settings = await Setting.findOne().lean();
+            if (!settings) settings = await Setting.create({});
+            cachedSettings = settings;
+            lastSettingsFetch = Date.now();
+        }
+
+        const settings = cachedSettings;
 
         // ==========================================
         // 🛑 EKSEKUSI PENGATURAN (GUARD)
@@ -68,15 +78,16 @@ export const systemGuard = async (ctx: MyContext, next: () => Promise<void>) => 
         if (!user) {
             user = await User.create({
                 telegramId,
-                username,
+                username: username ? username : undefined,
                 fullName,
                 balance: 0
             });
             console.log(`👤 User baru terdaftar: ${fullName} (${telegramId})`);
         } else {
-            // Update jika user ganti nama/username di Telegram
-            if (user.username !== username || user.fullName !== fullName) {
-                user.username = username;
+            // 🐛 FIX: Mencegah operasi Save/Update berulang-ulang tanpa henti (Infinite Write)
+            const resolvedUsername = username || undefined;
+            if (user.username !== resolvedUsername || user.fullName !== fullName) {
+                user.username = resolvedUsername;
                 user.fullName = fullName;
                 await user.save();
             }

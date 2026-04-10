@@ -26,7 +26,7 @@ export default (bot: Telegraf<MyContext>) => {
             await CsSession.findOneAndUpdate(
                 { userId },
                 { isActive: true, startedAt: new Date(), lastMessageAt: new Date() },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
 
             await ctx.editMessageCaption(

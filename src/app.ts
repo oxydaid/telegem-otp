@@ -5,6 +5,8 @@ import { connectDB } from './infrastructure/mongodb';
 import { loadModules } from './core/loader';
 import { systemGuard } from './middlewares/guard';
 import { BackupService } from './services/BackupService';
+import { DepositChecker } from './services/DepositChecker';
+import { startWebhookServer } from './infrastructure/webhook';
 
 const isExpiredCallbackQueryError = (error: unknown) => {
     if (!(error instanceof Error)) return false;
@@ -16,6 +18,14 @@ const isExpiredCallbackQueryError = (error: unknown) => {
 };
 
 const startApp = async () => {
+    const cyan = '\x1b[36m';
+    const bold = '\x1b[1m';
+    const reset = '\x1b[0m';
+    
+    console.log(`\n${cyan}╭──────────────────────────────╮${reset}`);
+    console.log(`${cyan}│${reset} 🚀 ${bold}TELEGRAM BOT STARTUP${reset}      ${cyan}│${reset}`);
+    console.log(`${cyan}╰──────────────────────────────╯${reset}`);
+
     await connectDB();
 
     bot.use(session());
@@ -38,12 +48,34 @@ const startApp = async () => {
         });
     });
 
-    bot.launch(() => {
-        console.log(`🤖 Bot @${bot.botInfo?.username} sedang berjalan...`);
+    const botMode = process.env.BOT_MODE || 'polling';
+    
+    // Backup berjalan di kedua mode
+    const backupService = new BackupService(bot);
+    backupService.startAutoBackup(); 
 
-        const backupService = new BackupService(bot);
-        backupService.startAutoBackup(); 
-    });
+    if (botMode === 'webhook') {
+        const domain = process.env.WEBHOOK_DOMAIN;
+        if (!domain) {
+            console.error("❌ WEBHOOK_DOMAIN belum di-set di .env!");
+            process.exit(1);
+        }
+
+        bot.telegram.setWebhook(`${domain}/telegraf`).then(() => {
+            console.log(`🤖 Bot berjalan dengan mode WEBHOOK`);
+            startWebhookServer(bot);
+            console.log(`\x1b[36m──────────────────────────────\x1b[0m\n`);
+        });
+    } else {
+        bot.launch(() => {
+            console.log(`🤖 Bot berjalan mode: POLLING (@${bot.botInfo?.username})`);
+            
+            const depositChecker = new DepositChecker(bot);
+            depositChecker.start();
+            
+            console.log(`\x1b[36m──────────────────────────────\x1b[0m\n`);
+        });
+    }
 
     process.once('SIGINT', () => bot.stop('SIGINT'));
     process.once('SIGTERM', () => bot.stop('SIGTERM'));
