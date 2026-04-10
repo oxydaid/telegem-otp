@@ -1,0 +1,30 @@
+{
+  "name": "telegem-otp-bot",
+  "version": "1.0.0",
+  "description": "Bot telegram untuk order nomor virtual",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon src/app.ts",
+    "build": "tsc",
+    "start": "node dist/app.js"
+  },
+  "keywords": [],
+  "author": "Oxyda ID",
+  "license": "ISC",
+  "packageManager": "pnpm@10.32.1",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "axios": "^1.15.0",
+    "dotenv": "^17.4.1",
+    "moment-timezone": "^0.6.1",
+    "mongoose": "^9.4.1",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/archiver": "^7.0.0",
+    "@types/node": "^25.5.2",
+    "nodemon": "^3.1.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.2"
+  }
+}
